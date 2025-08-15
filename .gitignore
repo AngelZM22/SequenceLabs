@@ -1,0 +1,12 @@
+# Base de datos
+data/futbol.db
+
+# Datasets JSON
+data/*.json
+data/events/
+data/matches/
+data/three-sixty/
+
+# Archivos temporales de Python
+__pycache__/
+*.pyc
