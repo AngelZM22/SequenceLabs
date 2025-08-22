@@ -21,22 +21,22 @@ def crear_tablas():
     cursor.execute('''CREATE TABLE IF NOT EXISTS events (
     event_id TEXT PRIMARY KEY,
     match_id INTEGER,
-    related_event TEXT,
-    period INTEGER,
-    timestamp TEXT,
-    minute INTEGER,
-    second INTEGER,
+    team_id INTEGER,
+    team_name TEXT,
+    player_id INTEGER,
+    player_name TEXT,
     type_id INTEGER,
     type_name TEXT,
+    period INTEGER,
+    minute INTEGER,
+    second INTEGER,
+    timestamp TEXT,
+    ts_abs REAL,
     possession INTEGER,
     possession_team_id INTEGER,
     possession_team_name TEXT,
     play_pattern_id INTEGER,
-    play_pattern_name TEXT,
-    team_id INTEGER,
-    team_name TEXT,
-    player_name TEXT,
-    jersey_number INTEGER,
+    play_pattern_name TEXT, 
     duration REAL
     )''')
 
@@ -132,6 +132,16 @@ def crear_tablas():
         penalty BOOLEAN,
         FOREIGN KEY (event_id) REFERENCES events(event_id)
     )''')
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS related_events (
+        event_id TEXT NOT NULL,
+        related_event_id TEXT NOT NULL,
+        PRIMARY KEY (event_id, related_event_id),
+        FOREIGN KEY(event_id) REFERENCES events(event_id),
+        FOREIGN KEY(related_event_id) REFERENCES events(event_id)
+    );
+    """)
 
     cursor.execute('''CREATE TABLE IF NOT EXISTS competitions (
         competition_id INTEGER,
@@ -160,6 +170,18 @@ def crear_tablas():
         season_id INTEGER,
         FOREIGN KEY (competition_id, season_id) REFERENCES competitions(competition_id, season_id)
     )''')
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS player_match_team (
+        player_id INTEGER NOT NULL,
+        match_id INTEGER NOT NULL,
+        team_id INTEGER NOT NULL,
+        jersey_number INTEGER,
+        position_name TEXT,
+        match_date TEXT,
+        PRIMARY KEY (player_id, match_id)
+    );
+    """)
 
     cursor.execute('''CREATE TABLE IF NOT EXISTS three_sixty (
         event_uuid TEXT PRIMARY KEY,
@@ -179,20 +201,30 @@ def crear_tablas():
     )''')
     
     cursor.execute('''CREATE TABLE IF NOT EXISTS lineup (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        event_id TEXT,
-        player_id INTEGER,
+        match_id INTEGER NOT NULL,
+        team_id INTEGER NOT NULL,
+        team_name TEXT,
+        player_id INTEGER NOT NULL,
         player_name TEXT,
-        position_id INTEGER,
-        position_name TEXT,
         jersey_number INTEGER,
-        FOREIGN KEY (event_id) REFERENCES events(event_id)
+        position_name TEXT,
+        PRIMARY KEY (match_id, player_id)
     )''')
+    
+    # Índices para optimizar consultas
     
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_player_name ON events(player_name)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_match_id ON events(match_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_type_name ON events(type_name)")
-
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_match_ts ON events(match_id, ts_abs)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_match_player_ts ON events(match_id, player_id, ts_abs)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_match_poss_ts ON events(match_id, possession, ts_abs)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_type ON events(type_name)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_related_event ON related_events(event_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_related_related ON related_events(related_event_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_lineup_match_team ON lineup(match_id, team_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_pmt_player ON player_match_team(player_id)")
+    
     conn.commit()
     conn.close()
 
@@ -273,54 +305,69 @@ def importar_json():
                 play_pattern = event.get("play_pattern", {})
                 team = event.get("team", {})
                 type = event["type"]["name"]
+                related = event.get('related_events', [])
+                base_time = {1: 0, 2: 45*60, 3: 90*60, 4: 105*60}
+                ts_abs = base_time.get(event.get("period"), 0) + (event.get("minute") or 0) * 60 + (event.get("second" or 0))
                 
                 cursor.execute('''INSERT INTO events (
                     event_id, match_id,
-                    related_event,
-                    period, timestamp,
-                    minute, second,
+                    team_id, team_name,
+                    player_id, player_name,
                     type_id, type_name,
+                    period,
+                    minute, second,
+                    timestamp,
+                    ts_abs,
                     possession, possession_team_id, possession_team_name,
                     play_pattern_id, play_pattern_name,
-                    team_id, team_name,
-                    player_name, jersey_number,
                     duration
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (
                     event_id,
                     match_id,
-                    event.get("related_event",{}).get("id"),
-                    event.get("period"),
-                    event.get("timestamp"),
-                    event.get("minute"),
-                    event.get("second"),
+                    team.get("id"),
+                    team.get("name"),
+                    player.get("id"),
+                    player.get("name"),
                     event.get("type", {}).get("id"),
                     event.get("type", {}).get("name"),
+                    event.get("period"),
+                    event.get("minute"),
+                    event.get("second"),
+                    event.get("timestamp"),
+                    ts_abs,
                     event.get("possession"),
                     possession_team.get("id"),
                     possession_team.get("name"),
                     play_pattern.get("id"),
                     play_pattern.get("name"),
-                    team.get("id"),
-                    team.get("name"),
-                    player.get("name"),
-                    player.get("jersey_number"),
                     event.get("duration")
                     ))
                 
-                if event.get("tactics") and event["tactics"].get("lineup"):
+                
+                if related:
+                    for rel in related:
+                        cursor.execute("""
+                        INSERT OR IGNORE INTO related_events (event_id, related_event_id)
+                        VALUES (?, ?)
+                        """, (event_id, rel))
+                
+                elif event.get("tactics") and event["tactics"].get("lineup"):
                     for player in event["tactics"]["lineup"]:
-                        cursor.execute('''INSERT INTO lineup (event_id, player_id, player_name, position_id, position_name, jersey_number) VALUES (?, ?, ?, ?, ?, ?)''', (
-                            event_id,
-                            player["player"].get("id"),
-                            player["player"].get("name"),
-                            player["position"].get("id"),
-                            player["position"].get("name"),
-                            player.get("jersey_number")
-                        ))
                         
-                type = event["type"]["name"]
+                        if player.get("id") is None:                # Evitar insertar jugadores sin ID, los jugadores sin ID son fallos.
+                            continue
+                    
+                        cursor.execute('''INSERT INTO lineup (match_id, team_id, team_name, player_id, player_name, jersey_number, position_name) VALUES (?, ?, ?, ?, ?, ?, ?)''', (
+                            match_id,
+                            team.get("id"),
+                            team.get("name"),
+                            player.get("id"),
+                            player.get("name"),
+                            player.get("jersey_number"),
+                            player.get("position",{}).get("name")
+                        ))
             
-                if type == "Pass":
+                elif type == "Pass":
                     loc = event.get("location", [None, None])
                     end_loc = event.get("pass",{}).get("end_location",[None, None])
                     pass_type = event.get("pass",{}).get("type",{}).get("name")
@@ -344,8 +391,7 @@ def importar_json():
                         length,
                         angle,
                         switch
-                    ))
-                    
+                    ))    
                 elif type == "Shot":
                     loc = event.get("location", [None, None])
                     end_loc = event.get("shot",{}).get("end_location",[None, None])
@@ -380,7 +426,7 @@ def importar_json():
                     
                 elif type == "Carry":
                     loc = event.get("location", [None, None])
-                    end_loc = event.get("dribble",{}).get("end_location",[None, None])
+                    end_loc = event.get("carry",{}).get("end_location",[None, None])
                     cursor.execute('''INSERT OR IGNORE INTO carries VALUES (?, ?, ?, ?, ?)''', (
                         event_id,
                         loc[0], loc[1],
@@ -400,7 +446,7 @@ def importar_json():
                         outcome,
                         event.get("counterpress",False)
                     ))
-                elif type == "Goal Keeper":
+                elif type == "GoalKeeper":
                     portero = event.get("goalkeeper",{})
                     cursor.execute('''INSERT OR IGNORE INTO goalkeeper VALUES (?, ?, ?, ?, ?)''', (
                         event_id,
@@ -426,7 +472,7 @@ def importar_json():
                     foul = event.get("foul_won",{})
                     cursor.execute('''INSERT OR IGNORE INTO fouls_won VALUES (?, ?, ?)''', (
                         event_id,
-                        foul.get("Advantage",False),
+                        foul.get("advantage",False),
                         foul.get("penalty",False),  
                     ))
                         
@@ -453,10 +499,28 @@ def importar_json():
                         frame["location"][0],
                         frame["location"][1]
                     ))
+                    
+    cursor.execute("""
+    INSERT OR REPLACE INTO player_match_team (player_id, match_id, team_id, jersey_number, position_name, match_date)
+    SELECT l.player_id, l.match_id, l.team_id, l.jersey_number, l.position_name, m.match_date
+    FROM lineup l
+    JOIN matches m ON m.match_id = l.match_id
+    """)
+    
+    # Completar faltantes desde events (sin dorsal)
+    cursor.execute("""
+    INSERT OR IGNORE INTO player_match_team (player_id, match_id, team_id, match_date)
+    SELECT DISTINCT e.player_id, e.match_id, e.team_id, m.match_date
+    FROM events e
+    JOIN matches m ON m.match_id = e.match_id
+    WHERE e.player_id IS NOT NULL
+    """)
+    
 
     conn.commit()
     conn.close()
     print("Datos importados correctamente.")
+
 
 if __name__ == "__main__":
     crear_tablas()
