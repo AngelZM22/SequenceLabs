@@ -3,6 +3,7 @@ import json
 import os
 import glob
 import pandas as pd
+from motorbusqueda import motor_busqueda_avanzado
 from uuid import uuid4
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -14,62 +15,40 @@ def conectar():
     return sqlite3.connect(DATA_PATH, check_same_thread=False)
 
 def prueba():
-    conn = conectar()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM events where match_id = ? ORDER BY timestamp")
-    '''
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    print(cursor.fetchall())
-    
-    cursor.execute("SELECT COUNT(*) FROM competitions")
-    print(cursor.fetchall())
-    cursor.execute("SELECT COUNT(*) FROM matches")
-    print(cursor.fetchall())
-    cursor.execute("SELECT COUNT(*) FROM events")
-    print(cursor.fetchall())
-    #cursor.execute("SELECT COUNT(*) FROM three-sixty")
-    #print(cursor.fetchall())
-    cursor.execute("SELECT COUNT(*) FROM freeze_frame")
-    print(cursor.fetchall())
-    cursor.execute("SELECT COUNT(*) FROM lineup")
-    print(cursor.fetchall())
-    
-    print("Different types of events:")
-    cursor.execute("SELECT DISTINCT type_name FROM events")
-    print(cursor.fetchmany)
-  
-    query = """
-    SELECT l.player_name, COUNT(*) as total
-    FROM lineup l
-    JOIN events e ON e.event_id = l.event_id
-    WHERE e.type_name = 'Pass'
-    GROUP BY l.player_name
-    ORDER BY total DESC;
-    """
-    
-    df = pd.read_sql_query(query, conn)
-    print(df)
-    '''
-    conn.close
+    conn = sqlite3.connect("c:/Users/angel/Desktop/VS-workspace/Trabajo-fin-de-grado/data/futbol.db")
+    cur = conn.cursor()
 
-def jugadorconmasregatesentrescuartos():
-    conn = conectar()
-    cursor = conn.cursor()
-    query = """
-            SELECT
-            e.player_name as nombre,
-            COUNT(*) AS regates
-            FROM dribbles d
-            JOIN events e ON d.event_id = e.event_id
-            WHERE d.start_x >= 90 AND d.players_overcome > 0
-            GROUP BY e.player_name
-            ORDER BY regates DESC
-            LIMIT 10
-            """
-    df = pd.read_sql(query, conn)
-    print(df)
-    conn.close()
-    return df
+    cur.execute("SELECT DISTINCT type_name FROM events ORDER BY type_name")
+    print(cur.fetchall())
+    
+    # Ver 10 pases con sus coords
+    cur.execute("""
+    SELECT e.type_name, p.start_x, p.start_y, p.end_x, p.end_y 
+    FROM passes p
+    JOIN events e ON e.event_id = p.event_id
+    LIMIT 10
+    """)
+    print(cur.fetchall())
+
+    # Ver 10 tiros con coords
+    cur.execute("""
+    SELECT e.type_name, s.start_x, s.start_y, s.end_x, s.end_y 
+    FROM shots s
+    JOIN events e ON e.event_id = s.event_id
+    LIMIT 10
+    """)
+    print(cur.fetchall())
+    
+    cur.execute("SELECT DISTINCT play_pattern_name FROM events WHERE play_pattern_name IS NOT NULL")
+    print(cur.fetchall())
+    
+    pattern = [
+    {"event": "Pass"},
+    {"event": "Shot"}
+    ]
+
+    res = motor_busqueda_avanzado("c:/Users/angel/Desktop/VS-workspace/Trabajo-fin-de-grado/data/futbol.db", pattern, margen_tiempo=300)
+    print(len(res))
 
 def bandaderecharegatecentrocabezazogol():
     

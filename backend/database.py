@@ -351,7 +351,7 @@ def importar_json():
                         VALUES (?, ?)
                         """, (event_id, rel))
                 
-                elif event.get("tactics") and event["tactics"].get("lineup"):
+                if event.get("tactics") and event["tactics"].get("lineup"):
                     for player in event["tactics"]["lineup"]:
                         
                         if player.get("id") is None:                # Evitar insertar jugadores sin ID, los jugadores sin ID son fallos.
@@ -446,7 +446,7 @@ def importar_json():
                         outcome,
                         event.get("counterpress",False)
                     ))
-                elif type == "GoalKeeper":
+                elif type == "Goal Keeper":
                     portero = event.get("goalkeeper",{})
                     cursor.execute('''INSERT OR IGNORE INTO goalkeeper VALUES (?, ?, ?, ?, ?)''', (
                         event_id,
