@@ -52,9 +52,9 @@ def crear_tablas():
         cross BOOLEAN,
         body_part TEXT,
         shot_assist BOOLEAN,
-        length REAL,
-        angle REAL,
-        switch REAL,
+        shot_assist_id TEXT,
+        goal_assist BOOLEAN,
+        outcome_name TEXT,
         FOREIGN KEY (event_id) REFERENCES events(event_id)
     )''')
 
@@ -368,17 +368,19 @@ def importar_json():
                         ))
             
                 elif type == "Pass":
+                    
                     loc = event.get("location", [None, None])
                     end_loc = event.get("pass",{}).get("end_location",[None, None])
                     pass_type = event.get("pass",{}).get("type",{}).get("name")
                     height = event.get("pass", {}).get("height", {}).get("name")
                     cross = event.get("pass", {}).get("cross", False)
                     body_part = event.get("pass", {}).get("body_part", {}).get("name")
+                    shot_assist_id = event.get("pass", {}).get("assisted_shot_id", None)
                     shot_assist = event.get("pass", {}).get("shot_assist", False)
-                    length = event.get("pass", {}).get("length", None)
-                    angle = event.get("pass", {}).get("angle", None)
-                    switch = event.get("pass", {}).get("switch", False)
-                    cursor.execute('''INSERT OR IGNORE INTO passes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ? ,?, ?, ?, ?)''', (
+                    goal_assist = event.get("pass", {}).get("goal_assist", False)
+                    outcome_name = event.get("pass", {}).get("outcome", {}).get("name")
+                    cross = event.get("pass", {}).get("cross", False)
+                    cursor.execute('''INSERT OR IGNORE INTO passes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (
                         event_id,
                         event.get("pass",{}).get("recipient",{}).get("name"),
                         loc[0], loc[1],
@@ -388,9 +390,9 @@ def importar_json():
                         cross,
                         body_part,
                         shot_assist,
-                        length,
-                        angle,
-                        switch
+                        shot_assist_id,
+                        goal_assist,
+                        outcome_name,
                     ))    
                 elif type == "Shot":
                     loc = event.get("location", [None, None])

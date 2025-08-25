@@ -14,15 +14,15 @@ DATA_PATH = os.path.join(PROJECT_ROOT, "data","futbol.db")
 
 # Ejemplos de patrones de búsqueda
 pattern1 = [
-    {"event": "Pass", "play_pattern": "From Corner"},
+    {"event": "Pass", "type": "Corner"},
     {"event": "Shot"}
 ]
 
 
 
 pattern2 = [
-    #{"event": "Pass", "start_x": 60, "start_y": 40, "tolerance": 20},
     {"event": "Carry", "start_x": 90, "start_y": 35, "tolerance": 32},
+    {"event": "Pass", "start_x": 60, "start_y": 40, "tolerance": 20},
     {"event": "Shot", "start_x": 116, "start_y": 40, "tolerance": 25}
 ]
 
@@ -45,7 +45,7 @@ def conectar():
 
 def prueba():
 
-    resultados = motor_busqueda_avanzado("c:/Users/angel/Desktop/VS-workspace/Trabajo-fin-de-grado/data/futbol.db", pattern2, margen_tiempo=120)
+    resultados = motor_busqueda_avanzado("c:/Users/angel/Desktop/VS-workspace/Trabajo-fin-de-grado/data/futbol.db", pattern1, margen_tiempo=120)
 
     print(f"Encontradas {len(resultados)} jugadas")
     print("Ejemplos:")
@@ -56,7 +56,7 @@ def prueba():
     for i, jugada in enumerate(resultados[:3]):  # mostramos 3 jugadas de ejemplo
         print(f"\nJugada {i+1}:")
         for ev in jugada:
-            print(f"  {ev['type_name']} en ({ev['start_x']}, {ev['start_y']}) - patrón {ev['play_pattern_name']}")
+            print(f"  {ev['type_name']} en ({ev['start_x']}, {ev['start_y']}) - patrón {ev.get('play_pattern_name', 'N/A')}")
     
 if __name__ == "__main__":
     conectar()

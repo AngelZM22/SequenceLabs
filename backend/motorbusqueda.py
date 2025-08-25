@@ -27,6 +27,12 @@ EXPANSIONES = {
     
 }
 
+EVENTOS_RUIDO = {
+    "Pressure", "Duel", "Foul Committed", "Foul Won",
+    "Player On", "Player Off", "Substitution",
+    "Injury Stoppage", "Referee Ball-Drop", "Tactical Shift"
+}   
+
 def dentro_de_zona(x, y, objetivo, tolerancia=10):
     return abs(x - objetivo["start_x"]) <= tolerancia and abs(y - objetivo["start_y"]) <= tolerancia
 
@@ -56,8 +62,29 @@ def comprobar_evento(evento, objetivo, tolerancia=10):
 
     return True
 
+def preprocesar_secuencia(secuencia):
+    """
+    Detecta patrones especiales (ej: Pass → Shot) y los convierte en combos.
+    """
+    nueva = []
+    i = 0
+    while i < len(secuencia):
+        actual = secuencia[i]
+        siguiente = secuencia[i+1] if i+1 < len(secuencia) else None
+
+        # Detectar combo Pass → Shot
+        if (actual.get("event") == "Pass" and
+            siguiente and siguiente.get("event") == "Shot"):
+            nueva.append({"event": "Pass→Shot", "combo": True})
+            i += 2  # saltamos dos
+        else:
+            nueva.append(actual)
+            i += 1
+    return nueva
 
 def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None, tolerancia=10, margen_tiempo=30):
+    
+    secuencia = preprocesar_secuencia(secuencia)
     
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -65,9 +92,14 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
     
     query_esqueleto= """
         SELECT e.event_id, e.match_id, e.type_name, e.play_pattern_name,
-               e.ts_abs, 
+               e.ts_abs, e.team_id,  
                COALESCE(p.start_x, s.start_x, d.start_x, ca.start_x, du.start_x) AS start_x,
-               COALESCE(p.start_y, s.start_y, d.start_y, ca.start_y, du.start_y) AS start_y
+               COALESCE(p.start_y, s.start_y, d.start_y, ca.start_y, du.start_y) AS start_y, 
+               p.shot_assist,
+               p.shot_assist_id,
+               s.outcome AS shot_outcome,
+               d.outcome AS dribble_outcome,
+               p.outcome_name AS pass_outcome
         FROM events e
         LEFT JOIN passes   p ON p.event_id = e.event_id
         LEFT JOIN shots    s ON s.event_id = e.event_id
@@ -97,6 +129,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
     indice_obj = 0
     ultimo_tiempo = None
     partido_actual = None
+    equipo_actual = None
     
     for e in eventos:
         evento = dict(e)
@@ -115,6 +148,45 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
         
         objetivo = secuencia[indice_obj] if indice_obj < len(secuencia) else None
         
+        if equipo_actual is None and objetivo and comprobar_evento(evento, objetivo, tolerancia):
+            equipo_actual = evento["team_id"]
+
+        if equipo_actual is not None and evento["team_id"] != equipo_actual:
+            # Evento de otro equipo → lo ignoramos como ruido
+            continue
+        
+        if objetivo.get("combo") and objetivo["event"] == "Pass→Shot":
+            if evento["type_name"] == "Pass" and evento.get("shot_assist") == 1:
+                # Añadimos el pase
+                actual.append(evento)
+
+                # Buscar el Shot asociado en la misma jugada
+                cursor2 = conn.cursor()
+                cursor2.execute("""
+                    SELECT e.event_id, e.match_id, e.type_name, e.ts_abs, e.team_id,
+                           s.start_x, s.start_y
+                    FROM events e
+                    JOIN shots s ON s.event_id = e.event_id
+                    WHERE e.match_id = ? AND e.team_id = ? 
+                      AND e.type_name = 'Shot' 
+                      AND e.ts_abs >= ?
+                    ORDER BY e.ts_abs ASC
+                    LIMIT 1
+                """, (evento["match_id"], evento["team_id"], evento["ts_abs"]))
+                shot = cursor2.fetchone()
+                if shot:
+                    actual.append(dict(shot))
+
+                # Avanzamos 1 posición en la secuencia (combo = 2 pasos de golpe)
+                indice_obj += 1
+                ultimo_tiempo = evento["ts_abs"]
+
+                # Secuencia completa
+                if indice_obj == len(secuencia):
+                    resultados.append(actual.copy())
+                    actual, indice_obj, ultimo_tiempo, equipo_actual = [], 0, None, None
+            continue
+
         if comprobar_evento(evento, objetivo, tolerancia=tolerancia):
             
             if ultimo_tiempo is not None and (evento["ts_abs"] - ultimo_tiempo) > margen_tiempo:
