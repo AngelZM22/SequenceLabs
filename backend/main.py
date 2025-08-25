@@ -14,7 +14,7 @@ DATA_PATH = os.path.join(PROJECT_ROOT, "data","futbol.db")
 
 # Ejemplos de patrones de búsqueda
 pattern1 = [
-    {"event": "Pass", "type": "Corner"},
+    {"event": "Pass", "play_pattern": "From Corner"},
     {"event": "Shot"}
 ]
 
@@ -45,7 +45,7 @@ def conectar():
 
 def prueba():
 
-    resultados = motor_busqueda_avanzado("c:/Users/angel/Desktop/VS-workspace/Trabajo-fin-de-grado/data/futbol.db", pattern1, margen_tiempo=120)
+    resultados = motor_busqueda_avanzado("c:/Users/angel/Desktop/VS-workspace/Trabajo-fin-de-grado/data/futbol.db", pattern1, competition="La Liga", margen_tiempo=120)
 
     print(f"Encontradas {len(resultados)} jugadas")
     print("Ejemplos:")

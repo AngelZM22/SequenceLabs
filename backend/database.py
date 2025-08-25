@@ -211,8 +211,16 @@ def crear_tablas():
         PRIMARY KEY (match_id, player_id)
     )''')
     
-    # Índices para optimizar consultas
+
+    conn.commit()
+    conn.close()
+
+def create_search_indexes():
     
+    # Índices para optimizar consultas
+    conn = conectar()
+    cursor = conn.cursor()
+
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_player_name ON events(player_name)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_match_id ON events(match_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_type_name ON events(type_name)")
@@ -224,10 +232,14 @@ def crear_tablas():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_related_related ON related_events(related_event_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_lineup_match_team ON lineup(match_id, team_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_pmt_player ON player_match_team(player_id)")
-    
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_type_pattern ON events(type_name, play_pattern_name)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_match_time ON events(match_id, ts_abs)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_match_team_time ON events(match_id, team_id, ts_abs)")
+
     conn.commit()
     conn.close()
-
+    print("Índices creados correctamente")
+    
 def importar_json():
     conn = conectar()
     cursor = conn.cursor()
@@ -525,5 +537,6 @@ def importar_json():
 
 
 if __name__ == "__main__":
-    crear_tablas()
-    importar_json()
+    #crear_tablas()
+    #importar_json()
+    create_search_indexes()

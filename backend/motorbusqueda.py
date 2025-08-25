@@ -48,8 +48,8 @@ def comprobar_evento(evento, objetivo, tolerancia=10):
         return False
 
     # si hay patrón de juego, comprobarlo
-    if "play_pattern" in objetivo and objetivo["play_pattern"] is not None:
-        if evento["play_pattern_name"] != objetivo["play_pattern"]:
+    if objetivo.get("play_pattern"):
+        if not evento["play_pattern_name"] or evento["play_pattern_name"].lower() != objetivo["play_pattern"].lower():
             return False
     
     # si hay zona, comprobarla
@@ -75,14 +75,27 @@ def preprocesar_secuencia(secuencia):
         # Detectar combo Pass → Shot
         if (actual.get("event") == "Pass" and
             siguiente and siguiente.get("event") == "Shot"):
-            nueva.append({"event": "Pass→Shot", "combo": True})
+            
+            combo = {"event": "Pass→Shot", "combo": True}
+
+            # Si el primer evento tiene play_pattern, lo mantenemos
+            if actual.get("play_pattern"):
+                combo["play_pattern"] = actual["play_pattern"]
+
+            # Si el primer evento tiene coords o tolerancia, también
+            for key in ["start_x", "start_y", "tolerance", "zone"]:
+                if actual.get(key):
+                    combo[key] = actual[key]
+
+            nueva.append(combo)
+
             i += 2  # saltamos dos
         else:
             nueva.append(actual)
             i += 1
     return nueva
 
-def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None, tolerancia=10, margen_tiempo=30):
+def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None, competition=None, tolerancia=10, margen_tiempo=30):
     
     secuencia = preprocesar_secuencia(secuencia)
     
@@ -92,7 +105,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
     
     query_esqueleto= """
         SELECT e.event_id, e.match_id, e.type_name, e.play_pattern_name,
-               e.ts_abs, e.team_id,  
+               e.ts_abs, e.team_id, c.competition_name,
                COALESCE(p.start_x, s.start_x, d.start_x, ca.start_x, du.start_x) AS start_x,
                COALESCE(p.start_y, s.start_y, d.start_y, ca.start_y, du.start_y) AS start_y, 
                p.shot_assist,
@@ -101,6 +114,8 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                d.outcome AS dribble_outcome,
                p.outcome_name AS pass_outcome
         FROM events e
+        JOIN matches m ON m.match_id = e.match_id
+        JOIN competitions c ON c.competition_id = m.competition_id
         LEFT JOIN passes   p ON p.event_id = e.event_id
         LEFT JOIN shots    s ON s.event_id = e.event_id
         LEFT JOIN dribbles d ON d.event_id = e.event_id
@@ -114,6 +129,16 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
         conds.append("e.match_id = ?")
         params.append(match_id)
 
+    if competition:
+        conds.append("c.competition_name = ?")
+        params.append(competition)
+    
+    primer_evento = secuencia[0]
+    
+    if primer_evento.get("play_pattern"):
+        conds.append("e.play_pattern_name = ?")
+        params.append(primer_evento["play_pattern"])
+        
     if conds:
         query_esqueleto += " WHERE " + " AND ".join(conds)
     
@@ -155,7 +180,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
             # Evento de otro equipo → lo ignoramos como ruido
             continue
         
-        if objetivo.get("combo") and objetivo["event"] == "Pass→Shot":
+        if objetivo.get("combo") and objetivo["event"] == "Pass→Shot" :
             if evento["type_name"] == "Pass" and evento.get("shot_assist") == 1:
                 # Añadimos el pase
                 actual.append(evento)
