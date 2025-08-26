@@ -21,8 +21,7 @@ ZONES = {
 }
 
 EXPANSIONES = {
-    
-    "Pass": ["Ball Receipt*"],   # tras un pase suele venir recepción
+
     "Dribble": ["Carry"],      # tras un regate suele venir una conducción
     
 }
@@ -66,16 +65,23 @@ def preprocesar_secuencia(secuencia):
     """
     Detecta patrones especiales (ej: Pass → Shot) y los convierte en combos.
     """
+    tipos = []
     nueva = []
     i = 0
     while i < len(secuencia):
         actual = secuencia[i]
         siguiente = secuencia[i+1] if i+1 < len(secuencia) else None
 
+        if actual.get("event"):
+            tipos.append(actual["event"])
+        
+        
+                    
         # Detectar combo Pass → Shot
         if (actual.get("event") == "Pass" and
             siguiente and siguiente.get("event") == "Shot"):
             
+            tipos.append("Shot")
             combo = {"event": "Pass→Shot", "combo": True}
 
             # Si el primer evento tiene play_pattern, lo mantenemos
@@ -83,26 +89,32 @@ def preprocesar_secuencia(secuencia):
                 combo["play_pattern"] = actual["play_pattern"]
 
             # Si el primer evento tiene coords o tolerancia, también
-            for key in ["start_x", "start_y", "tolerance", "zone"]:
-                if actual.get(key):
-                    combo[key] = actual[key]
+            for param in ["start_x", "start_y", "tolerance", "zone"]:
+                if actual.get(param) is not None:
+                    combo[param] = actual[param]
 
             nueva.append(combo)
-
             i += 2  # saltamos dos
-        else:
-            nueva.append(actual)
-            i += 1
-    return nueva
+            
+            continue
+
+        nueva.append(actual)
+        
+        if actual.get("event") in EXPANSIONES:
+            for exp in EXPANSIONES[actual["event"]]:
+                nueva.append({"event": exp, "synthetic": True})
+                tipos.append(exp)
+        i += 1
+    return {"secuencia": nueva, "tipos": tipos}
 
 def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None, competition=None, tolerancia=10, margen_tiempo=30):
     
-    secuencia = preprocesar_secuencia(secuencia)
+    secuencia, tipos = preprocesar_secuencia(secuencia).values()
     
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    
+        
     query_esqueleto= """
         SELECT e.event_id, e.match_id, e.type_name, e.play_pattern_name,
                e.ts_abs, e.team_id, c.competition_name,
@@ -123,6 +135,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
         LEFT JOIN duels    du ON du.event_id = e.event_id
     """
     
+    
     params, conds = [], []
     
     if match_id:
@@ -138,6 +151,11 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
     if primer_evento.get("play_pattern"):
         conds.append("e.play_pattern_name = ?")
         params.append(primer_evento["play_pattern"])
+    
+    if tipos:
+        placeholders = ",".join(["?"] * len(tipos))
+        conds.append(f"e.type_name IN ({placeholders})")
+        params.extend(tipos)
         
     if conds:
         query_esqueleto += " WHERE " + " AND ".join(conds)
@@ -156,6 +174,8 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
     partido_actual = None
     equipo_actual = None
     
+
+            
     for e in eventos:
         evento = dict(e)
         
@@ -230,9 +250,6 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                 indice_obj = 0
                 ultimo_tiempo = None
                 
-            if evento["type_name"] in EXPANSIONES:
-                for exp_event in EXPANSIONES[evento["type_name"]]:
-                    actual.append({"type_name": exp_event, "syntetic": True})
             
             if indice_obj == len(secuencia):
                 resultados.append(actual.copy())

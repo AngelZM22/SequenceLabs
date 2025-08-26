@@ -2,6 +2,7 @@ import sqlite3
 import json
 import os
 import glob
+import time
 from uuid import uuid4
 from datetime import datetime, timedelta
 from math import sqrt
@@ -44,10 +45,12 @@ def conectar():
     return sqlite3.connect(DATA_PATH, check_same_thread=False)
 
 def prueba():
-
-    resultados = motor_busqueda_avanzado("c:/Users/angel/Desktop/VS-workspace/Trabajo-fin-de-grado/data/futbol.db", pattern1, competition="La Liga", margen_tiempo=120)
+    inicio = time.time()
+    resultados = motor_busqueda_avanzado("c:/Users/angel/Desktop/VS-workspace/Trabajo-fin-de-grado/data/futbol.db", pattern2, competition="La Liga", margen_tiempo=120)
+    fin= time.time()
 
     print(f"Encontradas {len(resultados)} jugadas")
+    print(f"Tiempo de búsqueda: {fin - inicio:.2f} segundos")  
     print("Ejemplos:")
     print("--------------")
     print(resultados[0])
