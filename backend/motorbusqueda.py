@@ -1,5 +1,17 @@
 import sqlite3
 
+DEBUG_FILE = "debug_log.txt"
+
+def dlog(*args):
+    """Escribe logs de depuración en un archivo de texto (append)."""
+    try:
+        with open(DEBUG_FILE, "a", encoding="utf-8") as f:
+            print(*args, file=f)
+    except Exception as e:
+        # Evitar que un fallo de logging rompa el motor
+        pass
+# ------------------------
+
 ZONES = {
     "own_half": lambda x, y: x < 60,
     "opponent_half": lambda x, y: x >= 60,
@@ -9,7 +21,7 @@ ZONES = {
     "box_right": lambda x, y: 102 <= x <= 120 and 18 <= y <= 62,
     "box_left": lambda x, y: 0 <= x <= 18 and 18 <= y <= 62,
 
-    # Área pequeña
+    # Área pequeña ""
     "six_yard_right": lambda x, y: 114 <= x <= 120 and 30 <= y <= 50,
     "six_yard_left": lambda x, y: 0 <= x <= 6 and 30 <= y <= 50,
 
@@ -41,6 +53,8 @@ def rango_coordenadas(x, y, target, tol=10):
     return abs(x - target["start_x"]) <= tol and abs(y - target["start_y"]) <= tol
 
 def comprobar_evento(evento, objetivo, tolerancia=10):
+    
+    
     # tipo de evento (puede ser lista)
     tipos = objetivo["event"] if isinstance(objetivo["event"], list) else [objetivo["event"]]
     if evento["type_name"] not in tipos:
@@ -49,6 +63,7 @@ def comprobar_evento(evento, objetivo, tolerancia=10):
     # si hay patrón de juego, comprobarlo
     if objetivo.get("play_pattern"):
         if not evento["play_pattern_name"] or evento["play_pattern_name"].lower() != objetivo["play_pattern"].lower():
+
             return False
     
     # si hay zona, comprobarla
@@ -107,7 +122,8 @@ def preprocesar_secuencia(secuencia):
         i += 1
     return {"secuencia": nueva, "tipos": tipos}
 
-def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None, competition=None, tolerancia=10, margen_tiempo=30):
+def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None, team_id=None, play_pattern=None, competition=None, tolerancia=10, margen_tiempo=30):
+    
     
     secuencia, tipos = preprocesar_secuencia(secuencia).values()
     
@@ -117,7 +133,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
         
     query_esqueleto= """
         SELECT e.event_id, e.match_id, e.type_name, e.play_pattern_name,
-               e.ts_abs, e.team_id, c.competition_name,
+               e.ts_abs, e.team_id, c.competition_name, e.player_name, e.player_id, 
                COALESCE(p.start_x, s.start_x, d.start_x, ca.start_x, du.start_x) AS start_x,
                COALESCE(p.start_y, s.start_y, d.start_y, ca.start_y, du.start_y) AS start_y, 
                p.shot_assist,
@@ -133,6 +149,8 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
         LEFT JOIN dribbles d ON d.event_id = e.event_id
         LEFT JOIN carries  ca ON ca.event_id = e.event_id
         LEFT JOIN duels    du ON du.event_id = e.event_id
+        LEFT JOIN goalkeeper gk ON gk.event_id = e.event_id
+        LEFT JOIN interceptions inter ON inter.event_id = e.event_id
     """
     
     
@@ -146,11 +164,13 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
         conds.append("c.competition_name = ?")
         params.append(competition)
     
-    primer_evento = secuencia[0]
-    
-    if primer_evento.get("play_pattern"):
+    if team_id:
+        conds.append("e.team_id = ?")
+        params.append(team_id)
+
+    if play_pattern:
         conds.append("e.play_pattern_name = ?")
-        params.append(primer_evento["play_pattern"])
+        params.append(play_pattern)
     
     if tipos:
         placeholders = ",".join(["?"] * len(tipos))
@@ -177,70 +197,145 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
 
             
     for e in eventos:
+        
         evento = dict(e)
         
-        if partido_actual is None or partido_actual != evento["match_id"]:
-            actual = []
-            indice_obj = 0
-            ultimo_tiempo = None
-            partido_actual = evento["match_id"]
+        # Si ya hemos completado la secuencia, ignorar eventos anteriores al último tiempo
+        if ultimo_tiempo is not None and evento["ts_abs"] < ultimo_tiempo:
+            continue
         
-        if indice_obj >= len(secuencia):
+        # ¿hemos completado la secuencia justo en la iteración anterior?
+        if indice_obj == len(secuencia):
+            resultados.append(actual.copy())
             actual = []
             indice_obj = 0
             ultimo_tiempo = None
+            equipo_actual = None
             continue
         
         objetivo = secuencia[indice_obj] if indice_obj < len(secuencia) else None
         
-        if equipo_actual is None and objetivo and comprobar_evento(evento, objetivo, tolerancia):
-            equipo_actual = evento["team_id"]
+        # Filtro por equipo (si ya se ha establecido)
 
         if equipo_actual is not None and evento["team_id"] != equipo_actual:
-            # Evento de otro equipo → lo ignoramos como ruido
-            continue
-        
-        if objetivo.get("combo") and objetivo["event"] == "Pass→Shot" :
-            if evento["type_name"] == "Pass" and evento.get("shot_assist") == 1:
-                # Añadimos el pase
-                actual.append(evento)
 
-                # Buscar el Shot asociado en la misma jugada
-                cursor2 = conn.cursor()
-                cursor2.execute("""
-                    SELECT e.event_id, e.match_id, e.type_name, e.ts_abs, e.team_id,
-                           s.start_x, s.start_y
-                    FROM events e
-                    JOIN shots s ON s.event_id = e.event_id
-                    WHERE e.match_id = ? AND e.team_id = ? 
-                      AND e.type_name = 'Shot' 
-                      AND e.ts_abs >= ?
-                    ORDER BY e.ts_abs ASC
-                    LIMIT 1
-                """, (evento["match_id"], evento["team_id"], evento["ts_abs"]))
-                shot = cursor2.fetchone()
-                if shot:
-                    actual.append(dict(shot))
-
-                # Avanzamos 1 posición en la secuencia (combo = 2 pasos de golpe)
-                indice_obj += 1
-                ultimo_tiempo = evento["ts_abs"]
-
-                # Secuencia completa
-                if indice_obj == len(secuencia):
-                    resultados.append(actual.copy())
-                    actual, indice_obj, ultimo_tiempo, equipo_actual = [], 0, None, None
-            continue
-
-        if comprobar_evento(evento, objetivo, tolerancia=tolerancia):
+            # ¿El próximo paso es GK opcional? (útil si saltas el opcional)
+            prox = secuencia[indice_obj] if indice_obj < len(secuencia) else None
             
-            if ultimo_tiempo is not None and (evento["ts_abs"] - ultimo_tiempo) > margen_tiempo:
+            # ¿Se permite rival por ser GK?
+            paso_permite_gk = bool(objetivo and objetivo.get("event") == "Goal Keeper")
+            
+            prox_gk_opt = bool(prox and prox.get("event") == "Goal Keeper" and prox.get("optional"))
+
+            if not (paso_permite_gk or prox_gk_opt):
+                continue
+
+        
+        if ultimo_tiempo is not None:
+            dt = evento["ts_abs"] - ultimo_tiempo
+            if dt > margen_tiempo:
+                # ventana expirada → reset
                 actual = []
                 indice_obj = 0
                 ultimo_tiempo = None
+                equipo_actual = None
+                # seguimos con el stream
                 continue
             
+        if objetivo and objetivo.get("combo") and objetivo["event"] == "Pass→Shot" :
+            
+            if evento["type_name"] == "Pass" and evento.get("shot_assist") == 1:
+                
+                if objetivo.get("play_pattern"):
+                    ev_pp = (evento.get("play_pattern_name") or "").lower()
+                    
+                    if ev_pp != objetivo["play_pattern"].lower():
+                        pass
+                    
+                    else:
+                        actual.append(evento)
+                        if equipo_actual is None:
+                            equipo_actual = evento["team_id"]
+                            
+                        # Buscar el Shot asociado en la misma jugada
+                        cursor2 = conn.cursor()
+                        cursor2.execute("""
+                            SELECT e.event_id, e.match_id, e.type_name, e.ts_abs, e.team_id,
+                                e.player_name, e.player_id,
+                                s.start_x, s.start_y
+                            FROM events e
+                            JOIN shots s ON s.event_id = e.event_id
+                            WHERE e.match_id = ? AND e.team_id = ? 
+                            AND e.type_name = 'Shot' 
+                            AND e.ts_abs >= ?
+                            ORDER BY e.ts_abs ASC
+                            LIMIT 1
+                        """, (evento["match_id"], evento["team_id"], evento["ts_abs"]))
+                        shot = cursor2.fetchone()
+
+                        if shot:
+                            shdict = dict(shot)
+                            actual.append(shdict)
+                            
+                            ultimo_tiempo = shdict["ts_abs"]
+                            
+                            indice_obj += 1
+                            
+                            if indice_obj == len(secuencia):
+                                resultados.append(actual.copy())
+                                actual, indice_obj, ultimo_tiempo, equipo_actual = [], 0, None , None
+                                
+                                continue
+                            
+                            continue
+                        
+                else:
+                    
+                    actual.append(evento)
+                    
+                    if equipo_actual is None:
+                        equipo_actual = evento["team_id"]
+
+                    # Buscar el Shot asociado en la misma jugada
+                    cursor2 = conn.cursor()
+                    cursor2.execute("""
+                        SELECT e.event_id, e.match_id, e.type_name, e.ts_abs, e.team_id,
+                            e.player_name, e.player_id,
+                            s.start_x, s.start_y
+                        FROM events e
+                        JOIN shots s ON s.event_id = e.event_id
+                        WHERE e.match_id = ? AND e.team_id = ? 
+                        AND e.type_name = 'Shot' 
+                        AND e.ts_abs >= ?
+                        ORDER BY e.ts_abs ASC
+                        LIMIT 1
+                    """, (evento["match_id"], evento["team_id"], evento["ts_abs"]))
+                    shot = cursor2.fetchone()
+                    
+                    if shot:
+                            shdict = dict(shot)
+                            actual.append(shdict)
+                            
+                            ultimo_tiempo = shdict["ts_abs"]
+                            
+                            indice_obj += 1
+                            
+                            if indice_obj == len(secuencia):
+                                resultados.append(actual.copy())
+                                actual, indice_obj, ultimo_tiempo, equipo_actual = [], 0, None , None
+                                
+                                continue
+                            
+                            continue
+
+
+        if comprobar_evento(evento, objetivo, tolerancia=tolerancia):
+            
             actual.append(evento)
+            
+            if equipo_actual is None:
+                equipo_actual = evento["team_id"]
+                
             ultimo_tiempo = evento["ts_abs"]
             indice_obj += 1
             
@@ -249,23 +344,21 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                 actual = []
                 indice_obj = 0
                 ultimo_tiempo = None
-                
             
+            continue
+                
+        if objetivo.get("optional"):
+            indice_obj += 1
+                
             if indice_obj == len(secuencia):
                 resultados.append(actual.copy())
                 actual = []
                 indice_obj = 0
                 ultimo_tiempo = None
-                
-        else:
-            if objetivo.get("optional"):
-                indice_obj += 1
-                
-            else:
-                actual = []
-                indice_obj = 0
-                ultimo_tiempo = None                    
-    
+                equipo_actual = None
+            continue
     conn.close()
+    
     return resultados
+
     
