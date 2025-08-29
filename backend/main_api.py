@@ -9,14 +9,14 @@ import os
 
 from motorbusqueda import motor_busqueda_avanzado
 
-from services.summary import build_summary
-from services.ranking import construir_ranking
-from services.player_insights import (appears_with_role, compute_role_stats, detect_result, build_youtube_query)
+from summary import build_summary
+from ranking import construir_ranking
+from services import appears_with_role, compute_role_stats, detect_result, build_youtube_query
 
 # Ajusta esta ruta a tu BBDD
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "futbol.db")
 
-from cache import _cache_put, cache_get
+from cache import _cache_put, _cache_get
 
 app = FastAPI(title="TFG Fútbol API")
 
@@ -47,6 +47,31 @@ class SearchRequest(BaseModel):
     tolerancia: Optional[int] = 10
     margen_tiempo: Optional[int] = 30
 
+def _build_match_info_map(db_path, match_ids):
+    if not match_ids:
+        return {}
+
+    marks = ",".join(["?"] * len(match_ids))
+    sql = f"""
+        SELECT m.match_id, m.home_team, m.away_team, c.season_name
+        FROM matches m
+        JOIN competitions c
+          ON c.competition_id = m.competition_id
+         AND c.season_id = m.season_id
+        WHERE m.match_id IN ({marks})
+    """
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute(sql, list(match_ids))
+    out = {}
+    for mid, home, away, season in cur.fetchall():
+        out[mid] = {
+            "home_team": home,
+            "away_team": away,
+            "season_name": season
+        }
+    conn.close()
+    return out
         
 @app.get("/status")
 def status():
@@ -89,7 +114,7 @@ def buscar(req: SearchRequest) -> Any:
         # Limitar para evitar sobrecarga
         return {
             "summary": summary,
-            "ranking": construir_ranking(resultados),
+            "ranking": ranking_links,
             "examples": resultados[:3],
             "query_id": query_id   
         }
@@ -102,18 +127,30 @@ def buscar(req: SearchRequest) -> Any:
 
 @app.get("/player-insights")
 def player_insights(role: str, player_id: Optional[int] = None, query_id: Optional[str]= None, limit_examples: int = 5):
-    seqs = cache_get(query_id) if query_id else []
+    seqs = _cache_get(query_id) if query_id else []
     
     if seqs is None:
         return HTTPException(status_code=404, detail="Query ID not found in cache")
     
     jugadas = [j for j in seqs if appears_with_role(j, player_id, role)]
     
-    stats = compute_role_stats(jugadas, player_id, role)
+    stats = compute_role_stats(jugadas, role, player_id)
     
+    #----------------------------------------------------------------------------#
+    wanted = jugadas[:max(1, min(int(limit_examples or 5), 15))]
+    match_ids = set()
+    for j in wanted:
+        for ev in j:
+            mid = ev.get("match_id")
+            if mid is not None:
+                match_ids.add(mid)
+                
+    match_info_map = _build_match_info_map(DB_PATH, list(match_ids))
+    #----------------------------------------------------------------------------#
     examples = []
     
     n = max(1, min( int (limit_examples or 5), 15))
+    
     
     for j in jugadas[:n]:
         match_id = next((ev.get("match_id") for ev in j if ev.get("match_id") is not None), None)
@@ -125,7 +162,7 @@ def player_insights(role: str, player_id: Optional[int] = None, query_id: Option
             "events": [ev.get("type_name") for ev in j],
             "result": detect_result(j),
             "preview": f"/render/play?match_id={match_id}&event_ids={event_ids}" if match_id and event_ids else None,
-            "youtube_search": build_youtube_query(j)
+            "youtube_search": build_youtube_query(j, match_info_map)
         })
 
     return {
@@ -133,6 +170,6 @@ def player_insights(role: str, player_id: Optional[int] = None, query_id: Option
         "player_id": player_id,
         "player": stats.get("player_name"),
         "totals": stats.get("totals"),
-        "by_context": stats.get("by_context"),
+        "context": stats.get("context"),
         "examples": examples
     }

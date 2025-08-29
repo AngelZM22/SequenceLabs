@@ -1,3 +1,6 @@
+from collections import Counter
+from typing import List, Dict
+
 def construir_ranking(secuencias: list[list[dict]]) -> dict[str, list[dict]] :
     tiradores = Counter()
     asistentes = Counter()
@@ -6,45 +9,88 @@ def construir_ranking(secuencias: list[list[dict]]) -> dict[str, list[dict]] :
     regateadores = Counter()
     porteros = Counter()
     
+    id2name =Dict[int, str]={}
+    
     for jugada in secuencias:
         for ev in jugada:
             tipo = ev.get("type_name")
-            jugador = ev.get("player_name")
+            pid = ev.get("player_id")
+            pname = ev.get("player_name")
+            
+            if pid is None:
+                continue
+            
+            if pname:
+                id2name[pid] = pname
             
             if tipo == "Shot":
-                tiradores[jugador] += 1
+                tiradores[pid] += 1
             
             elif tipo == "Pass":
                 if ev.get("shot_assist"):
-                    asistentes[jugador] += 1
+                    asistentes[pid] += 1
                 else:
-                    pasadores_previos[jugador] += 1
+                    pasadores_previos[pid] += 1
                     
-            elif tipo in ("Dribble"):
-                regateadores[jugador] += 1
+            elif tipo == "Dribble":
+                regateadores[pid] += 1
                 
             elif tipo in ("Ball Recovery", "Interception"):
-                recuperadores[jugador] += 1
+                recuperadores[pid] += 1
+            
+            elif tipo == "Duel":
+                outcome = (ev.get("duel_outcome") or "").lower()
+                team_id = ev.get("team_id")
+                poss_team = ev.get("possession_team_id")
+                
+                if outcome in ("won", "success") and team_id is not None and poss_team is not None and team_id != poss_team:
+                    recuperadores[pid] += 1
 
             elif tipo == "Goal Keeper":
-                porteros[jugador] += 1
+                porteros[pid] += 1
                 
-    def top10(counter):
-        return [{"player": p, "count": c} for p, c in counter.most_common(10)]
+    def _top(counter: Counter, n: int = 10):
+        out = []
+        for pid, c in counter.most_common(n):
+            out.append({
+                "player_id": pid,
+                "player_name": id2name.get(pid, "Unknown"),
+                "count": c
+            })
+        return out
     
     ranking = {}
     
     if tiradores:
-        ranking["tiradores"] = top10(tiradores)
+        ranking["tiradores"] = _top(tiradores)
     if asistentes:
-        ranking["asistentes"] = top10(asistentes)
+        ranking["asistentes"] = _top(asistentes)
     if pasadores_previos:
-        ranking["pasadores_previos"] = top10(pasadores_previos)
+        ranking["pasadores_previos"] = _top(pasadores_previos)
     if recuperadores:
-        ranking["recuperadores"] = top10(recuperadores)
+        ranking["recuperadores"] = _top(recuperadores)
     if regateadores:
-        ranking["regateadores"] = top10(regateadores)
+        ranking["regateadores"] = _top(regateadores)
     if  porteros:
-        ranking["porteros"] = top10(porteros)
+        ranking["porteros"] = _top(porteros)
+        
+    pesos = {"assist": 3, "pass_lead": 1}
+    score = Counter()
+    for key in set(list(asistentes.keys())+ list(pasadores_previos.keys())):
+        s = pesos["assist"] * asistentes.get(key, 0) + pesos["pass_lead"] * pasadores_previos.get(key, 0)
+        if s > 0:
+            score[key] = s
+    def _topcreador(counter, n=10):
+        out= []
+        for pid, s in counter.most_common(n):
+            out.append({
+                "player_id": pid, "player": id2name.get(pid, "Unknown"), "score": s,
+                "assists": asistentes.get(pid, 0),
+                "passes_leading_to_shot": pasadores_previos.get(pid, 0)
+            })
+        return out
+
+    if score:
+        ranking["creadores"] = _topcreador(score)
         
     return ranking

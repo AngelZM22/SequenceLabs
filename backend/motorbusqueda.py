@@ -12,6 +12,13 @@ def dlog(*args):
         pass
 # ------------------------
 
+def _norm(str) -> str:
+    """Normaliza cadenas para comparaciones."""
+    if not str:
+        return ""
+    return str.strip().lower()
+
+
 ZONES = {
     "own_half": lambda x, y: x < 60,
     "opponent_half": lambda x, y: x >= 60,
@@ -57,12 +64,15 @@ def comprobar_evento(evento, objetivo, tolerancia=10):
     
     # tipo de evento (puede ser lista)
     tipos = objetivo["event"] if isinstance(objetivo["event"], list) else [objetivo["event"]]
-    if evento["type_name"] not in tipos:
+    ev_type = _norm(evento["type_name"])
+    tipos_norm = [_norm(t) for t in tipos]
+    
+    if ev_type not in tipos_norm:
         return False
 
     # si hay patrón de juego, comprobarlo
     if objetivo.get("play_pattern"):
-        if not evento["play_pattern_name"] or evento["play_pattern_name"].lower() != objetivo["play_pattern"].lower():
+        if not evento["play_pattern_name"] or _norm(evento.get("play_pattern_name")) != _norm(objetivo["play_pattern"]):
 
             return False
     
@@ -133,14 +143,16 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
         
     query_esqueleto= """
         SELECT e.event_id, e.match_id, e.type_name, e.play_pattern_name,
-               e.ts_abs, e.team_id, c.competition_name, e.player_name, e.player_id, 
+               e.ts_abs, e.team_id, c.competition_name, e.player_name, e.player_id, e.possesion_team_id,
                COALESCE(p.start_x, s.start_x, d.start_x, ca.start_x, du.start_x) AS start_x,
                COALESCE(p.start_y, s.start_y, d.start_y, ca.start_y, du.start_y) AS start_y, 
                p.shot_assist,
                p.shot_assist_id,
                s.outcome AS shot_outcome,
                d.outcome AS dribble_outcome,
-               p.outcome_name AS pass_outcome
+               du.outcome AS duel_outcome,
+               p.outcome_name AS pass_outcome,
+               inter.outcome AS interception_outcome
         FROM events e
         JOIN matches m ON m.match_id = e.match_id
         JOIN competitions c ON c.competition_id = m.competition_id
@@ -161,20 +173,20 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
         params.append(match_id)
 
     if competition:
-        conds.append("c.competition_name = ?")
-        params.append(competition)
+        conds.append("LOWER(c.competition_name) = ?")
+        params.append(_norm(competition))
     
     if team_id:
         conds.append("e.team_id = ?")
         params.append(team_id)
 
     if play_pattern:
-        conds.append("e.play_pattern_name = ?")
-        params.append(play_pattern)
+        conds.append("LOWER(e.play_pattern_name) = ?")
+        params.append(_norm(play_pattern))
     
     if tipos:
         placeholders = ",".join(["?"] * len(tipos))
-        conds.append(f"e.type_name IN ({placeholders})")
+        conds.append(f"LOWER(e.type_name) IN ({placeholders})")
         params.extend(tipos)
         
     if conds:

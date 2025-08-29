@@ -1,12 +1,14 @@
 import os
 import requests
 
-TOKEN = "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"
+
 REPOSITORIO = "https://api.github.com/repos/statsbomb/open-data/contents/data"
 CARPETAS = ["matches", "events", "three-sixty"]
 LOCALDATASET_PATH = "data"
-HEADERS = {"Authorization": f"token {TOKEN}"} if TOKEN else {}
 
+GITHUB_TOKEN = "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"  # Reemplaza con tu token personal de GitHub si es necesario
+TOKEN = os.getenv("GITHUB_TOKEN", "")
+HEADERS = {"Authorization": f"token {TOKEN}"} if TOKEN else {}
 
 def descargar_archivos_carpeta_rec(url_api, carpeta_local):
     response = requests.get(url_api, headers=HEADERS)

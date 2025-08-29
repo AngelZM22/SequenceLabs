@@ -221,20 +221,38 @@ def create_search_indexes():
     conn = conectar()
     cursor = conn.cursor()
 
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_player_name ON events(player_name)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_match_id ON events(match_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_type_name ON events(type_name)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_match_ts ON events(match_id, ts_abs)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_match_player_ts ON events(match_id, player_id, ts_abs)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_match_poss_ts ON events(match_id, possession, ts_abs)")
+    # EVENTS: filtros + ordenación del motor
+    
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_match_time ON events(match_id, ts_abs);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_match_team_time ON events(match_id, team_id, ts_abs)")
+    
+    # Si filtras sólo por team_id (sin match), ayuda 
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_team_match_time ON events(team_id, match_id, ts_abs)")
+    
+    # Tipos y patrones: (IN sobre type_name) y a veces play_pattern_name
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_type_pattern ON events(type_name, play_pattern_name)")
+    
+    # Consultas por patron sin tipo
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_play_pattern ON events(play_pattern_name)")
+    
+    # Busquedas por jugador
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_player_match_time ON events(player_id, match_id, ts_abs)")
+    
+    # Joins/Consultas auxiliares
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_type ON events(type_name)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_match_poss_time ON events(match_id, possession, ts_abs)")
+    
+    # Related events
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_related_event ON related_events(event_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_related_related ON related_events(related_event_id)")
+    
+    # Lineup / player_match_team
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_lineup_match_team ON lineup(match_id, team_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_pmt_player ON player_match_team(player_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_type_pattern ON events(type_name, play_pattern_name)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_match_time ON events(match_id, ts_abs)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_match_team_time ON events(match_id, team_id, ts_abs)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_pmt_player ON player_match_team(player_id)") 
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_pmt_match ON player_match_team(match_id)")
+    
+    # Matches
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_matches_comp_season ON matches(competition_id, season_id)")
 
     conn.commit()
     conn.close()
@@ -413,10 +431,12 @@ def importar_json():
                     first_time = event.get("shot", {}).get("first_time", False)
                     technique = event.get("shot", {}).get("technique", {}).get("name")
                     outcome = event.get("shot", {}).get("outcome", {}).get("name")
+                    shot_type = event.get("shot", {}).get("type", {}).get("name")
+                    
                     cursor.execute('''INSERT OR IGNORE INTO shots VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (
                         event_id,
-                        event.get("shot",{}).get("outcome",{}).get("name") == "Goal",
-                        event.get("shot",{}).get("outcome",{}).get("name"),
+                        outcome == "Goal",
+                        shot_type,
                         loc[0], loc[1],
                         end_loc[0], end_loc[1],
                         body_part,
@@ -497,22 +517,22 @@ def importar_json():
         except json.JSONDecodeError as e:
             print(f"Error en {archivo}:{e}")
             
-            for entry in data:
-                event_uuid = entry.get("event_uuid")
-                visible_area = json.dumps(entry.get("visible_area"))
+        for entry in data:
+            event_uuid = entry.get("event_uuid")
+            visible_area = json.dumps(entry.get("visible_area"))
                     
-                cursor.execute('''INSERT OR IGNORE INTO three_sixty (event_uuid, visible_area) VALUES (?, ?)''', (event_uuid, visible_area))
+            cursor.execute('''INSERT OR IGNORE INTO three_sixty (event_uuid, visible_area) VALUES (?, ?)''', (event_uuid, visible_area))
                     
-                for frame in entry.get("freeze_frame", []):
-                    cursor.execute('''INSERT OR IGNORE INTO freeze_frame (event_uuid, teammate, actor, keeper, location_x, location_y) 
+            for frame in entry.get("freeze_frame", []):
+                cursor.execute('''INSERT OR IGNORE INTO freeze_frame (event_uuid, teammate, actor, keeper, location_x, location_y) 
                                     VALUES (?, ?, ?, ?, ?, ?)''', (
-                        event_uuid,
-                        int(frame.get("teammate", False)),
-                        int(frame.get("actor", False)),
-                        int(frame.get("keeper", False)),
-                        frame["location"][0],
-                        frame["location"][1]
-                    ))
+                    event_uuid,
+                    int(frame.get("teammate", False)),
+                    int(frame.get("actor", False)),
+                    int(frame.get("keeper", False)),
+                    frame["location"][0],
+                    frame["location"][1]
+                ))
                     
     cursor.execute("""
     INSERT OR REPLACE INTO player_match_team (player_id, match_id, team_id, jersey_number, position_name, match_date)
