@@ -103,8 +103,8 @@ def preprocesar_secuencia(secuencia):
         
                     
         # Detectar combo Pass → Shot
-        if (actual.get("event") == "Pass" and
-            siguiente and siguiente.get("event") == "Shot"):
+        if (_norm(actual.get("event") == "pass") and
+            siguiente and _norm(siguiente.get("event")) == "shot"):
             
             tipos.append("Shot")
             combo = {"event": "Pass→Shot", "combo": True}
@@ -187,7 +187,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
     if tipos:
         placeholders = ",".join(["?"] * len(tipos))
         conds.append(f"LOWER(e.type_name) IN ({placeholders})")
-        params.extend(tipos)
+        params.extend([_norm(t) for t in tipos])
         
     if conds:
         query_esqueleto += " WHERE " + " AND ".join(conds)
@@ -256,7 +256,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
             
         if objetivo and objetivo.get("combo") and objetivo["event"] == "Pass→Shot" :
             
-            if evento["type_name"] == "Pass" and evento.get("shot_assist") == 1:
+            if _norm(evento["type_name"]) == "pass" and evento.get("shot_assist") == 1:
                 
                 if objetivo.get("play_pattern"):
                     ev_pp = (evento.get("play_pattern_name") or "").lower()

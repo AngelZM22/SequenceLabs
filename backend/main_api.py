@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from collections import Counter
+import sqlite3
 import os
 
 
@@ -11,7 +12,7 @@ from motorbusqueda import motor_busqueda_avanzado
 
 from summary import build_summary
 from ranking import construir_ranking
-from services import appears_with_role, compute_role_stats, detect_result, build_youtube_query
+from player_insights import appears_with_role, compute_role_stats, detect_result, build_youtube_query
 
 # Ajusta esta ruta a tu BBDD
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "futbol.db")
