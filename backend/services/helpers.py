@@ -16,10 +16,10 @@ def _norm(s: str) -> str:
     s = re.sub(r"\s+", " ", s)
     return s
 
-def norm_equals(a: str, b: str) -> bool:
+def _norm_equals(a: str, b: str) -> bool:
     return _norm(a) == _norm(b)
 
-def norm_in(s1: str, s2: str) -> bool:
+def _norm_in(s1: str, s2: str) -> bool:
     return _norm(s1) in _norm(s2)
 
 
@@ -47,6 +47,8 @@ def matches_outcome(ev, desired: str) -> bool:
 def is_shot(ev):
     return _norm(ev.get("type_name")) == "shot"
 
+def is_foul(ev):
+    return _norm(ev["type_name"]) in ("foul won", "foul committed")
 
 def is_goal(ev) -> bool:
     # 1) preferimos el booleano

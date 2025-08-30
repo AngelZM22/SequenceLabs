@@ -38,7 +38,9 @@ class EventFilter(BaseModel):
     tolerance: Optional[int] = None
     zone: Optional[Dict[str, float]] = None
     optional: Optional[bool] = None
-
+    team: str | None = None               # "same" | "opponent" | "any"
+    switch_possession: bool | None = None # este paso DEBE ser cambio de posesión
+    
 class SearchRequest(BaseModel):
     pattern: List[EventFilter]
     match_id: Optional[int] = None
