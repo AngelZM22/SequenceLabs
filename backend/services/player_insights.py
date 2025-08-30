@@ -1,5 +1,5 @@
 from typing import List, Dict, Optional, Any
-
+from helpers import is_goal
 def _norm(s: Optional[str]) -> str:
     return (s or "").strip().lower()
 
@@ -23,9 +23,9 @@ def _appears_with_role(jugada: List[Dict[str, Any]], player_id: Optional[int], r
         if ev.get("player_id") == player_id:
             if role == "tiradores" and t == "shot":
                 return True
-            elif role == "asistentes" and t == "pass" and ev.get("shot_assist") == 1:
+            elif role == "asistentes" and t == "pass" and ev.get("pass_is_shot_assist") == 1:
                 return True
-            elif role == "pasadores_previos" and t == "pass" and ev.get("shot_assist") == 0:
+            elif role == "pasadores_previos" and t == "pass" and ev.get("pass_is_shot_assist") == 0:
                 return True
             elif role == "regateadores" and t == "dribble":
                 return True
@@ -56,13 +56,13 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
                 if _norm(_etype(e)) =="shot" and e.get("player_id") == player_id:
                     player_name = e.get("player_name", player_name)
                     shots += 1
-                    if _norm(_shot_outcome(e)) == "goal":
+                    if is_goal(e) == "goal":
                         goals += 1
                     ctx=(e.get("play_pattern_name") or "Unknown")
                     b = context.get(ctx, {"count":0, "goals":0})
                     b["count"] += 1
                     
-                    if _norm(_shot_outcome(e))== "goal":
+                    if is_goal(e)== "goal":
                         b["goals"] += 1
                         
                     context[ctx] = b
@@ -82,14 +82,14 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
                 assist_ths = False
                 ctx_ths = Dict[str, Dict[str, Any]] = {}
                 
-                if _norm(_etype(e)) =="Pass" and e.get("player_id") == player_id and e.get("shot_assist") == 1:
+                if _norm(_etype(e)) =="Pass" and e.get("player_id") == player_id and e.get("pass_is_shot_assist") == 1:
                     player_name = e.get("player_name", player_name)
                     assists += 1
                     assist_ths = True
                     ctx_ths = (e.get("play_pattern_name") or "Unknown")
                     
                     if assist_ths:
-                        goal_created = any((_norm(_etype(ev)) =="shot" and _norm(_shot_outcome(ev))  == "goal") for ev in j)
+                        goal_created = any((_norm(_etype(ev)) =="shot" and is_goal(ev) == "goal") for ev in j)
                         if goal_created:
                             goals_created += 1
                         ctx=(ctx_ths or "Unknown")
@@ -120,7 +120,7 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
 
             for e in j:
                 
-                if _norm(_etype(e)) =="pass" and e.get("player_id") == player_id and e.get("shot_assist") == 0: # No es asistencia
+                if _norm(_etype(e)) =="pass" and e.get("player_id") == player_id and e.get("pass_is_shot_assist") == 0: # No es asistencia
                     
                     player_name = e.get("player_name", player_name) 
                     passes += 1
@@ -258,7 +258,7 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
                     
                 if gk_participate:
                     interventions += 1
-                    shot_goal = any((_norm(_etype(eve)) == "shot" and _norm(_shot_outcome(eve)) == "goal") for eve in j)
+                    shot_goal = any((_norm(_etype(eve)) == "shot" and is_goal(eve) == "goal") for eve in j)
                     
                     if shot_goal:
                         goals_conceed += 1
@@ -292,21 +292,21 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
             asst_this = False
             ctx_this = {}
             for e in j:
-                if _norm(_etype(e))=="pass" and e.get("player_id")== player_id and e.get("shot_assist")==1:
+                if _norm(_etype(e))=="pass" and e.get("player_id")== player_id and e.get("pass_is_shot_assist")==1:
                     player_name = player_name or e.get("player_name")
                     assists += 1
                     asst_this = True
                     ctx_this = (e.get("play_pattern_name") or "Unknown")
                 
                 if asst_this:
-                    if any((_norm(_etype(ev))=="shot" and _norm(_shot_outcome(ev))=="goal") for ev in j):
+                    if any((_norm(_etype(ev))=="shot" and is_goal(ev)=="goal") for ev in j):
                         goals_created += 1
                     
                     c = ctx_this or "Unknown"
                     b = ctx_assist.get(c, {"assists":0, "goals_created":0})
                     b["assists"] += 1
                     
-                    if any((_norm(_etype(ev))=="shot" and _norm(_shot_outcome(ev))=="goal") for ev in j):
+                    if any((_norm(_etype(ev))=="shot" and is_goal(ev)=="goal") for ev in j):
                         b["goals_created"] += 1
                         
                     ctx_assist[c] = b
@@ -318,7 +318,7 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
         for j in jugadas:
             shot_times = [e.get("ts_abs") for e in j if _norm(_etype(e)) == "shot" and isinstance(e.get("ts_abs"), (int,float))]
             for e in j:
-                if _norm(_etype(e)) == "pass" and e.get("player_id") == player_id and e.get("shot_assist") != 1:
+                if _norm(_etype(e)) == "pass" and e.get("player_id") == player_id and e.get("pass_is_shot_assist") != 1:
                     passes += 1
                     e_ts = e.get("ts_abs")
                     leads = isinstance(e_ts, (int, float)) and any(st > e_ts for st in shot_times)
@@ -360,7 +360,7 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
                     
 def detect_result(jugada: List[Dict[str, Any]]) -> str:
     for e in jugada:
-        if _norm(_etype(e)) == "shot" and _norm(_shot_outcome(e)) == "goal":
+        if _norm(_etype(e)) == "shot" and is_goal(e) == "goal":
             return "goal"
     return "no goal"          
 

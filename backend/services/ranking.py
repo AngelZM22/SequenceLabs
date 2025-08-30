@@ -27,7 +27,7 @@ def construir_ranking(secuencias: list[list[dict]]) -> dict[str, list[dict]] :
                 tiradores[pid] += 1
             
             elif tipo == "Pass":
-                if ev.get("shot_assist"):
+                if ev.get("pass_is_shot_assist"):
                     asistentes[pid] += 1
                 else:
                     pasadores_previos[pid] += 1
