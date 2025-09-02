@@ -10,9 +10,9 @@ import os
 
 from motorbusqueda import motor_busqueda_avanzado
 
-from summary import build_summary
-from ranking import construir_ranking
-from player_insights import appears_with_role, compute_role_stats, detect_result, build_youtube_query
+from services.summary import build_summary
+from services.ranking import construir_ranking
+from services.player_insights import _appears_with_role, compute_role_stats, detect_result, build_youtube_query
 
 # Ajusta esta ruta a tu BBDD
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "futbol.db")
@@ -36,10 +36,14 @@ class EventFilter(BaseModel):
     start_x: Optional[float] = None
     start_y: Optional[float] = None
     tolerance: Optional[int] = None
-    zone: Optional[Dict[str, float]] = None
+    zone: Optional[Union[str, Dict[str, float]]] = None
+    outcome: Optional[Union[str, List[str]]] = None
+    outcomes: Optional[List[str]] = None
     optional: Optional[bool] = None
-    team: str | None = None               # "same" | "opponent" | "any"
-    switch_possession: bool | None = None # este paso DEBE ser cambio de posesión
+    team: str | None = None               
+    switch_possession: bool | None = None 
+    success: Optional[bool] = None
+    goal: Optional[bool] = None
     
 class SearchRequest(BaseModel):
     pattern: List[EventFilter]
@@ -84,6 +88,11 @@ def status():
 def buscar(req: SearchRequest) -> Any:
     try:
         secuencia = [e.model_dump(exclude_none=True) for e in req.pattern]
+        for step in secuencia:
+            if isinstance(step.get("outcome"), list):
+                step["outcomes"] = (step.get("outcomes") or []) + step["outcome"]
+                step["outcome"] = None
+
         resultados = motor_busqueda_avanzado(
             db_path=DB_PATH,
             secuencia=secuencia,
@@ -135,7 +144,7 @@ def player_insights(role: str, player_id: Optional[int] = None, query_id: Option
     if seqs is None:
         return HTTPException(status_code=404, detail="Query ID not found in cache")
     
-    jugadas = [j for j in seqs if appears_with_role(j, player_id, role)]
+    jugadas = [j for j in seqs if _appears_with_role(j, player_id, role)]
     
     stats = compute_role_stats(jugadas, role, player_id)
     

@@ -1,8 +1,8 @@
 import sqlite3
-from helpers import normalize_text as _norm
-from helpers import norm_equals as _norm_equals
-from helpers import norm_in as _norm_in
-from services.helpers import _outcome_of, is_duel_won, is_goal, is_foul, is_interception_success, is_recovery, is_shot, is_won_outcome, is_success, matches_outcome
+from helpers import  _norm
+from helpers import  _norm_equals
+from helpers import  _norm_in
+from helpers import _outcome_of, is_duel_won, is_goal, is_foul, is_interception_success, is_recovery, is_shot, is_success, matches_outcome
 from typing import List, Dict, Any
 DEBUG_FILE = "debug_log.txt"
 
@@ -38,11 +38,6 @@ ZONES = {
     "corner_bottom_right": lambda x, y: x >= 118 and y >= 78,
 }
 
-EXPANSIONES = {
-
-    "Dribble": ["Carry"],      # tras un regate suele venir una conducción
-    
-}
 
 SUCCESS_OUTCOMES = {"won", "success", "successful", "complete"}  # amplía si lo necesitas
 
@@ -90,7 +85,7 @@ def _is_switch_trigger(ev: dict, posesion_anterior: int | None) -> bool:
     # 2) duelo ganado con cambio de posesión (robo)
     if t == "duel":
         try:
-            from services.helpers import is_duel_won
+            
             if is_duel_won(ev) and posesion_anterior is not None and ev.get("possession_team_id") != posesion_anterior:
                 return True
         except Exception:
@@ -98,7 +93,6 @@ def _is_switch_trigger(ev: dict, posesion_anterior: int | None) -> bool:
     # 3) parada del portero (evento de portero “exitoso”)
     if t in ("goal keeper", "goalkeeper"):
         try:
-            from services.helpers import is_success
             if is_success(ev):
                 return True
         except Exception:
@@ -154,13 +148,18 @@ def comprobar_evento(evento, objetivo, tolerancia=10):
             return False
 
     # outcome: "won"/"lost"/"success"/"blocked"/...
-    if objetivo.get("outcome"):
-        if not matches_outcome(evento, objetivo["outcome"]):
+    o1 = objetivo.get("outcome")
+    oN = objetivo.get("outcomes") or []
+    if isinstance(o1, list):
+        oN = oN + o1
+        o1 = None
+
+    if o1 is not None:
+        if not matches_outcome(evento, o1):
             return False
 
-    # outcomes múltiples
-    if objetivo.get("outcomes"):
-        if not any(matches_outcome(evento, o) for o in objetivo["outcomes"]):
+    if oN:
+        if not any(matches_outcome(evento, o) for o in oN):
             return False
 
     # success: True/False (genérico por tipo de evento)
@@ -215,12 +214,8 @@ def preprocesar_secuencia(secuencia):
 
         nueva.append(actual)
         
-        if actual.get("event") in EXPANSIONES:
-            for exp in EXPANSIONES[actual["event"]]:
-                nueva.append({"event": exp, "synthetic": True})
-                tipos.append(exp)
                 
-        if (actual.get("event") or "").strip().lower() == "foul":
+        if _norm(actual.get("event"))== "foul":
             actual["event"] = ["Foul Won", "Foul Committed"]
             tipos.append("Foul Won")
             tipos.append("Foul Committed")
@@ -244,8 +239,8 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                 
                 e.possession_team_id AS possession_team_id,
                 
-                COALESCE(p.start_x, s.start_x, d.start_x, ca.start_x, du.start_x) AS start_x,
-                COALESCE(p.start_y, s.start_y, d.start_y, ca.start_y, du.start_y) AS start_y, 
+                COALESCE(p.start_x, s.start_x, d.start_x, ca.start_x, du.start_x, br.start_x, brcv.start_x) AS start_x,
+                COALESCE(p.start_y, s.start_y, d.start_y, ca.start_y, du.start_y, br.start_y, brcv.start_y) AS start_y, 
                 
                 p.shot_assist            AS pass_is_shot_assist,
                 p.shot_assist_id         AS pass_shot_assist_id,
@@ -261,10 +256,16 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                 fc.penalty               AS foul_committed_penalty,
                 fc.card                  AS foul_committed_card,
                 gk.outcome               AS gk_outcome_name
+                br.outcome               AS ball_receipt_outcome_name,
+                brcv.recovery_failure    AS ball_recovery_failure,
+                brcv.offensive           AS ball_recovery_offensive,
+                brcv.counterpress        AS ball_recovery_counterpress,
                 
                 FROM events e
                 JOIN matches m                  ON m.match_id = e.match_id
                 JOIN competitions c             ON c.competition_id = m.competition_id
+                                                AND c.season_id = m.season_id
+                                                
                 LEFT JOIN passes   p            ON p.event_id = e.event_id
                 LEFT JOIN shots    s            ON s.event_id = e.event_id
                 LEFT JOIN dribbles d            ON d.event_id = e.event_id
@@ -274,6 +275,8 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                 LEFT JOIN interceptions inter   ON inter.event_id = e.event_id
                 LEFT JOIN fouls_won      fw     ON fw.event_id = e.event_id
                 LEFT JOIN fouls_committed fc    ON fc.event_id = e.event_id
+                LEFT JOIN ball_receipts   br   ON br.event_id   = e.event_id
+                LEFT JOIN ball_recoveries brcv ON brcv.event_id = e.event_id
     """
     
     
@@ -335,6 +338,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
             indice_obj = 0
             ultimo_tiempo = None
             equipo_actual = None
+            posesion_actual = None 
             continue
         
         objetivo = secuencia[indice_obj] if indice_obj < len(secuencia) else None
@@ -357,14 +361,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                 # seguimos con el stream
                 continue
             
-        if not (objetivo or {}).get("switch_possession"):
-            if _is_switch_trigger(evento, posesion_actual):
-                actual = []
-                indice_obj = 0
-                ultimo_tiempo = None
-                equipo_actual = None
-                posesion_actual = None
-                continue
+        
             
         if objetivo and objetivo.get("combo") and objetivo["event"] == "Pass→Shot" :
             
@@ -413,7 +410,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                     continue
                         
                 if objetivo.get("outcome"):
-                    if _norm(shdict.get("shot_outcome_name") or "") != _norm(objetivo["outcome"]):
+                    if _norm(shdict.get("shot_outcome_name")) != _norm(objetivo["outcome"]):
                         actual = []
                         continue
                             
@@ -425,7 +422,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                             
                 if indice_obj == len(secuencia):
                     resultados.append(actual.copy())
-                    actual, indice_obj, ultimo_tiempo, equipo_actual = [], 0, None , None
+                    actual, indice_obj, ultimo_tiempo, equipo_actual, posesion_actual = [], 0, None , None, None
                                 
                             
                             
@@ -454,9 +451,19 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                 actual = []
                 indice_obj = 0
                 ultimo_tiempo = None
+                equipo_actual = None 
+                posesion_actual = None 
             
             continue
-                
+        
+        if not (objetivo or {}).get("switch_possession") and _is_switch_trigger(evento, posesion_actual):
+            actual = []
+            indice_obj = 0
+            ultimo_tiempo = None
+            equipo_actual = None
+            posesion_actual = None
+            continue       
+        
         if objetivo.get("optional"):
             indice_obj += 1
                 
@@ -466,6 +473,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                 indice_obj = 0
                 ultimo_tiempo = None
                 equipo_actual = None
+                posesion_actual = None
             continue
     conn.close()
     

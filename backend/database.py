@@ -133,6 +133,24 @@ def crear_tablas():
         FOREIGN KEY (event_id) REFERENCES events(event_id)
     )''')
     
+    cursor.execute('''CREATE TABLE IF NOT EXISTS ball_receipts (
+    event_id TEXT PRIMARY KEY,
+    start_x REAL,
+    start_y REAL,
+    outcome TEXT,                
+    FOREIGN KEY (event_id) REFERENCES events(event_id)
+    )''')
+
+    cursor.execute('''CREATE TABLE IF NOT EXISTS ball_recoveries (
+        event_id TEXT PRIMARY KEY,
+        start_x REAL,
+        start_y REAL,
+        recovery_failure BOOLEAN,    -- True si falla la recuperación (si viene en datos)
+        offensive BOOLEAN,           -- si viene en ball_recovery.offensive
+        counterpress BOOLEAN,        -- hereda del root event.get("counterpress", False)
+        FOREIGN KEY (event_id) REFERENCES events(event_id)
+    )''')
+    
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS related_events (
         event_id TEXT NOT NULL,
@@ -254,6 +272,14 @@ def create_search_indexes():
     # Matches
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_matches_comp_season ON matches(competition_id, season_id)")
 
+    # Ball Receipts
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ball_receipts_event ON ball_receipts(event_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ball_receipts_outcome ON ball_receipts(outcome)")
+    
+    # Ball Recoveries
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ball_recoveries_event ON ball_recoveries(event_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ball_recoveries_failure ON ball_recoveries(recovery_failure)")
+    
     conn.commit()
     conn.close()
     print("Índices creados correctamente")
@@ -278,7 +304,9 @@ def importar_json():
     DELETE FROM goalkeeper;
     DELETE FROM duels;
     DELETE FROM fouls_committed;
-    DELETE FROM fouls_won;  
+    DELETE FROM fouls_won; 
+    DELETE FROM ball_receipts;
+    DELETE FROM ball_recoveries; 
     """)
 
     # Importar competiciones
@@ -489,6 +517,32 @@ def importar_json():
                         portero.get("body_part",{}).get("name"),
                         portero.get("outcome",{}).get("name")
                     ))
+                elif type in ("Ball Receipt", "Ball Receipt*"):
+                    loc = event.get("location", [None, None])
+                    br = (event.get("ball_receipt", {}) or {})
+                    outcome_name = (br.get("outcome", {}) or {}).get("name")  
+
+                    cursor.execute('''INSERT OR IGNORE INTO ball_receipts VALUES (?, ?, ?, ?)''', (
+                        event_id,
+                        loc[0], loc[1],
+                        outcome_name
+                    ))
+
+                elif type == "Ball Recovery":
+                    loc = event.get("location", [None, None])
+                    rec = (event.get("ball_recovery", {}) or {})
+                    failure = bool(rec.get("recovery_failure", False))
+                    offensive = bool(rec.get("offensive", False))
+                    counterpress = bool(event.get("counterpress", False))
+
+                    cursor.execute('''INSERT OR IGNORE INTO ball_recoveries VALUES (?, ?, ?, ?, ?, ?)''', (
+                        event_id,
+                        loc[0], loc[1],
+                        failure,
+                        offensive,
+                        counterpress
+                    ))  
+                    
                 elif type == "Interception":
                     outcome = event.get("interception",{}).get("outcome",{}).get("name")
                     cursor.execute('''INSERT OR IGNORE INTO interceptions VALUES (?, ?)''', (
@@ -557,6 +611,6 @@ def importar_json():
 
 
 if __name__ == "__main__":
-    #crear_tablas()
-    #importar_json()
+    crear_tablas()
+    importar_json()
     create_search_indexes()

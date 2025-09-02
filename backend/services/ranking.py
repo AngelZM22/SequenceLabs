@@ -1,7 +1,8 @@
 from collections import Counter
-from typing import List, Dict
+from typing import List, Dict, Any
+from helpers import _norm, is_success
 
-def construir_ranking(secuencias: list[list[dict]]) -> dict[str, list[dict]] :
+def construir_ranking(secuencias: List[List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]] :
     tiradores = Counter()
     asistentes = Counter()
     pasadores_previos = Counter()
@@ -9,11 +10,11 @@ def construir_ranking(secuencias: list[list[dict]]) -> dict[str, list[dict]] :
     regateadores = Counter()
     porteros = Counter()
     
-    id2name =Dict[int, str]={}
+    id2name:     Dict[int, str]= {}
     
     for jugada in secuencias:
         for ev in jugada:
-            tipo = ev.get("type_name")
+            tipo = _norm(ev.get("type_name"))
             pid = ev.get("player_id")
             pname = ev.get("player_name")
             
@@ -23,30 +24,31 @@ def construir_ranking(secuencias: list[list[dict]]) -> dict[str, list[dict]] :
             if pname:
                 id2name[pid] = pname
             
-            if tipo == "Shot":
+            if tipo == "shot":
                 tiradores[pid] += 1
             
-            elif tipo == "Pass":
+            elif tipo == "pass":
                 if ev.get("pass_is_shot_assist"):
                     asistentes[pid] += 1
                 else:
                     pasadores_previos[pid] += 1
                     
-            elif tipo == "Dribble":
-                regateadores[pid] += 1
+            elif tipo == "dribble":
+                if _norm(ev.get("dribble_outcome_name")) == "complete":
+                    regateadores[pid] += 1
                 
-            elif tipo in ("Ball Recovery", "Interception"):
-                recuperadores[pid] += 1
+            elif tipo in ("ball recovery", "interception"):
+                if(is_success(ev)):
+                    recuperadores[pid] += 1
             
-            elif tipo == "Duel":
-                outcome = (ev.get("duel_outcome") or "").lower()
+            elif tipo == "duel":    
                 team_id = ev.get("team_id")
                 poss_team = ev.get("possession_team_id")
                 
-                if outcome in ("won", "success") and team_id is not None and poss_team is not None and team_id != poss_team:
+                if is_success(ev) and team_id is not None and poss_team is not None and team_id != poss_team:
                     recuperadores[pid] += 1
 
-            elif tipo == "Goal Keeper":
+            elif tipo == "goal keeper":
                 porteros[pid] += 1
                 
     def _top(counter: Counter, n: int = 10):
@@ -59,7 +61,7 @@ def construir_ranking(secuencias: list[list[dict]]) -> dict[str, list[dict]] :
             })
         return out
     
-    ranking = {}
+    ranking: Dict[str, list[dict]] ={}
     
     if tiradores:
         ranking["tiradores"] = _top(tiradores)
@@ -80,6 +82,7 @@ def construir_ranking(secuencias: list[list[dict]]) -> dict[str, list[dict]] :
         s = pesos["assist"] * asistentes.get(key, 0) + pesos["pass_lead"] * pasadores_previos.get(key, 0)
         if s > 0:
             score[key] = s
+            
     def _topcreador(counter, n=10):
         out= []
         for pid, s in counter.most_common(n):

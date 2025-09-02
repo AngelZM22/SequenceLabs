@@ -32,7 +32,7 @@ def _appears_with_role(jugada: List[Dict[str, Any]], player_id: Optional[int], r
             elif role == "recuperadores" and t in ("ball recovery", "interception"):
                 return True
             elif role == "recuperadores" and t == "duel":
-                outcome = _norm(ev.get("duel_outcome"))
+                outcome = _norm(ev.get("duel_outcome_name"))
                 team_id = ev.get("team_id")
                 poss_team = ev.get("possession_team_id")
                 
@@ -56,13 +56,13 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
                 if _norm(_etype(e)) =="shot" and e.get("player_id") == player_id:
                     player_name = e.get("player_name", player_name)
                     shots += 1
-                    if is_goal(e) == "goal":
+                    if is_goal(e):
                         goals += 1
                     ctx=(e.get("play_pattern_name") or "Unknown")
                     b = context.get(ctx, {"count":0, "goals":0})
                     b["count"] += 1
                     
-                    if is_goal(e)== "goal":
+                    if is_goal(e):
                         b["goals"] += 1
                         
                     context[ctx] = b
@@ -89,7 +89,7 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
                     ctx_ths = (e.get("play_pattern_name") or "Unknown")
                     
                     if assist_ths:
-                        goal_created = any((_norm(_etype(ev)) =="shot" and is_goal(ev) == "goal") for ev in j)
+                        goal_created = any((_norm(_etype(ev)) =="shot" and is_goal(ev)) for ev in j)
                         if goal_created:
                             goals_created += 1
                         ctx=(ctx_ths or "Unknown")
@@ -159,13 +159,13 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
                 if _norm(_etype(e)) =="dribble" and e.get("player_id") == player_id:
                     player_name = e.get("player_name", player_name)
                     dribbles += 1
-                    if _norm(e.get("outcome_name")) == "successful":
+                    if _norm(e.get("dribble_outcome_name")) == "complete":
                         successful_dribbles += 1
                     ctx=(e.get("play_pattern_name") or "Unknown")
                     b = context.get(ctx, {"dribbles":0, "successful_dribbles":0})
                     b["dribbles"] += 1
                     
-                    if _norm(e.get("outcome_name")) == "successful":
+                    if _norm(e.get("dribble_outcome_name")) == "complete":
                         b["successful_dribbles"] += 1
                         
                     context[ctx] = b
@@ -184,7 +184,7 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
         types = {}
         player_name = None
         
-        RECOVERY_TYPES = ["ball Recovery", "interception", "duel"]
+        RECOVERY_TYPES = ["ball recovery", "interception", "duel"]
         
         for j in jugadas:
             for e in j:
@@ -193,11 +193,12 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
 
                 if t not in RECOVERY_TYPES or e.get("player_id") != player_id:
                     continue
+                
                 counts = False
                 if t in ("ball recovery", "interception"):
                     counts = True
                 elif t == "duel":
-                    outcome = _norm(e.get("duel_outcome"))
+                    outcome = _norm(e.get("duel_outcome_name"))
                     team_id = e.get("team_id")
                     poss_team = e.get("possession_team_id")
                     if outcome in ("won", "success") and team_id is not None and poss_team is not None and team_id != poss_team:
@@ -258,7 +259,7 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
                     
                 if gk_participate:
                     interventions += 1
-                    shot_goal = any((_norm(_etype(eve)) == "shot" and is_goal(eve) == "goal") for eve in j)
+                    shot_goal = any((_norm(_etype(eve)) == "shot" and is_goal(eve)) for eve in j)
                     
                     if shot_goal:
                         goals_conceed += 1
@@ -299,14 +300,14 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
                     ctx_this = (e.get("play_pattern_name") or "Unknown")
                 
                 if asst_this:
-                    if any((_norm(_etype(ev))=="shot" and is_goal(ev)=="goal") for ev in j):
+                    if any((_norm(_etype(ev))=="shot" and is_goal(ev)) for ev in j):
                         goals_created += 1
                     
                     c = ctx_this or "Unknown"
                     b = ctx_assist.get(c, {"assists":0, "goals_created":0})
                     b["assists"] += 1
                     
-                    if any((_norm(_etype(ev))=="shot" and is_goal(ev)=="goal") for ev in j):
+                    if any((_norm(_etype(ev))=="shot" and is_goal(ev)) for ev in j):
                         b["goals_created"] += 1
                         
                     ctx_assist[c] = b
@@ -360,7 +361,7 @@ def compute_role_stats(jugadas: List[List[Dict[str, Any]]], role: str, player_id
                     
 def detect_result(jugada: List[Dict[str, Any]]) -> str:
     for e in jugada:
-        if _norm(_etype(e)) == "shot" and is_goal(e) == "goal":
+        if _norm(_etype(e)) == "shot" and is_goal(e):
             return "goal"
     return "no goal"          
 

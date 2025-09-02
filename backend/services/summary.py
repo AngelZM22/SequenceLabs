@@ -21,7 +21,7 @@ def build_summary(resultados: List[List[dict]]) -> dict:
         
         for ev in jugada:
             if ev.get("team_id") is not None:
-                teams_ids.add(ev["team_name"])
+                teams_ids.add(ev["team_id"])
             if ev.get("match_id") is not None:
                 match_ids.add(ev["match_id"])
             
