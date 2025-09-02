@@ -35,7 +35,7 @@ def _outcome_of(ev) -> str:
         return _norm(ev.get("duel_outcome_name"))
     if t == "interception":
         return _norm(ev.get("interception_outcome_name"))
-    if t == "ball receipt":
+    if t in ("ball receipt", "ball receipt*"):
         return _norm(ev.get("ball_receipt_outcome_name"))
     return _norm(ev.get("outcome_name") or "")
 

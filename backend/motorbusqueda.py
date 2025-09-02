@@ -82,7 +82,7 @@ def _is_switch_trigger(ev: dict, posesion_anterior: int | None) -> bool:
                 return True
         except Exception:
             pass
-    # 2) duelo ganado con cambio de posesión (robo)
+    # Duelo ganado con cambio de posesión (robo)
     if t == "duel":
         try:
             
@@ -90,6 +90,8 @@ def _is_switch_trigger(ev: dict, posesion_anterior: int | None) -> bool:
                 return True
         except Exception:
             pass
+    if t == "ball recovery":
+        return True
     # 3) parada del portero (evento de portero “exitoso”)
     if t in ("goal keeper", "goalkeeper"):
         try:
@@ -177,23 +179,75 @@ def comprobar_evento(evento, objetivo, tolerancia=10):
     return True
 
 def preprocesar_secuencia(secuencia):
-    """
-    Detecta patrones especiales (ej: Pass → Shot) y los convierte en combos.
-    """
+    
     tipos = []
+    
+    _sec_norm = []
+    for step in (secuencia or []):
+        step = step = dict(step) if isinstance(step, dict) else (dict(step) if step else {})
+        ev = step.get("event")
+        
+        if isinstance(ev, str):
+            if _norm(ev) == "recovery":
+                st = dict(step)
+                st["event"] = ["Ball Recovery", "Interception", "Duel"]
+                if "success" not in st:
+                    st["success"] = True
+                if "switch_possession" not in st:
+                    st["switch_possession"] = True
+                # outcomes no tienen sentido en el macro → se ignoran
+                st.pop("outcome", None)
+                st.pop("outcomes", None)
+                step = st    
+                
+        elif isinstance(ev, list) and ("Recovery" in ev):
+            st = dict(step)
+            new_ev = [t for t in ev if t != "Recovery"]
+            new_ev.extend(["Ball Recovery", "Interception", "Duel"])
+            st["event"] = new_ev
+            if "success" not in st:
+                st["success"] = True
+            if "switch_possession" not in st:
+                st["switch_possession"] = True
+            st.pop("outcome", None)
+            st.pop("outcomes", None)
+            step = st
+                    
+        _sec_norm.append(step)
+        
+        ev_final = step.get("event")
+        
+        
+        if isinstance(ev_final, list):
+            for t in ev_final:
+                tipos.append(t)
+                    
+        elif ev_final:
+            tipos.append(ev_final)
+                
+    
     nueva = []
     i = 0
-    while i < len(secuencia):
-        actual = secuencia[i]
-        siguiente = secuencia[i+1] if i+1 < len(secuencia) else None
+    while i < len(_sec_norm):
+        actual = _sec_norm[i]
+        siguiente = _sec_norm[i+1] if i+1 < len(_sec_norm) else None
 
-        if actual.get("event"):
-            tipos.append(actual["event"])
+        ev_val = actual.get("event")
+        ev_norm = _norm(ev_val) if isinstance(ev_val, str) else None
+        sig_norm = _norm(siguiente.get("event")) if (siguiente and isinstance(siguiente.get("event"), str)) else None
         
+        if ev_norm == "foul":
+            act = dict(actual)
+            act["event"] = ["Foul Won", "Foul Committed"]
+            nueva.append(act)
+            # asegúrate de que ambos están en 'tipos'
+            tipos.extend(["Foul Won", "Foul Committed"])
+            i += 1
+            continue    
         
                     
         # Detectar combo Pass → Shot
-        if _norm(actual.get("event")) == "pass" and siguiente and _norm(siguiente.get("event")) == "shot":
+        if ev_norm == "pass" and siguiente and sig_norm == "shot":
             
             tipos.append("Shot")
             combo = {"event": "Pass→Shot", "combo": True}
@@ -213,13 +267,12 @@ def preprocesar_secuencia(secuencia):
             continue
 
         nueva.append(actual)
-        
-                
-        if _norm(actual.get("event"))== "foul":
-            actual["event"] = ["Foul Won", "Foul Committed"]
-            tipos.append("Foul Won")
-            tipos.append("Foul Committed")
         i += 1
+                
+    if tipos:
+        seen = set()
+        tipos = [t for t in tipos if not (t in seen or seen.add(t))]
+        
     return {"secuencia": nueva, "tipos": tipos}
 
 def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None, team_id=None, play_pattern=None, competition=None, tolerancia=10, margen_tiempo=30):
@@ -255,11 +308,11 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                 fc.offensive             AS foul_committed_offensive,
                 fc.penalty               AS foul_committed_penalty,
                 fc.card                  AS foul_committed_card,
-                gk.outcome               AS gk_outcome_name
+                gk.outcome               AS gk_outcome_name,
                 br.outcome               AS ball_receipt_outcome_name,
                 brcv.recovery_failure    AS ball_recovery_failure,
                 brcv.offensive           AS ball_recovery_offensive,
-                brcv.counterpress        AS ball_recovery_counterpress,
+                brcv.counterpress        AS ball_recovery_counterpress
                 
                 FROM events e
                 JOIN matches m                  ON m.match_id = e.match_id
