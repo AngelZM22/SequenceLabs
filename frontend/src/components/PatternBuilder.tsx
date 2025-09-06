@@ -201,37 +201,38 @@ function PasoFila({
             </button>
         </div>
 
-        {/* Coords y tolerancia */}
-        <div
-            className="md:col-span-6 grid grid-cols-3 gap-3"
-            onClick={(e) => e.stopPropagation()}
-        >
+            {/* Coordenadas, fin opcional y tolerancia */}
+            <div className="md:col-span-6 grid grid-cols-5 gap-3" onClick={(e) => e.stopPropagation()}>
+                <div>
+                    <label className="text-xs text-gray-600">start_x</label>
+                    <input type="number" className="mt-1 w-full border rounded px-2 py-2"
+                    value={paso.start_x ?? ""} onChange={onStartXChange}/>
+                </div>
             <div>
-                <label className="text-xs text-gray-600">start_x</label>
+                <label className="text-xs text-gray-600">start_y</label>
+                <input type="number" className="mt-1 w-full border rounded px-2 py-2"
+                value={paso.start_y ?? ""} onChange={onStartYChange}/>
+            </div>
+            <div>
+                <label className="text-xs text-gray-600">end_x</label>
                 <input
-                    type="number"
-                    className="mt-1 w-full border rounded px-2 py-2"
-                    value={paso.start_x ?? ""}
-                    onChange={onStartXChange}
+                type="number" className="mt-1 w-full border rounded px-2 py-2"
+                value={paso.end_x ?? ""}
+                onChange={(e) => onChange({ ...paso, end_x: e.target.value ? Number(e.target.value) : undefined })}
                 />
             </div>
             <div>
-                <label className="text-xs text-gray-600">start_y</label>
+                <label className="text-xs text-gray-600">end_y</label>
                 <input
-                    type="number"
-                    className="mt-1 w-full border rounded px-2 py-2"
-                    value={paso.start_y ?? ""}
-                    onChange={onStartYChange}
+                type="number" className="mt-1 w-full border rounded px-2 py-2"
+                value={paso.end_y ?? ""}
+                onChange={(e) => onChange({ ...paso, end_y: e.target.value ? Number(e.target.value) : undefined })}
                 />
             </div>
             <div>
                 <label className="text-xs text-gray-600">tolerance</label>
-                <input
-                    type="number"
-                    className="mt-1 w-full border rounded px-2 py-2"
-                    value={paso.tolerance ?? ""}
-                    onChange={onTolChange}
-                />
+                <input type="number" className="mt-1 w-full border rounded px-2 py-2"
+                value={paso.tolerance ?? ""} onChange={onTolChange}/>
             </div>
         </div>
     </div>

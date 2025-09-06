@@ -1,13 +1,14 @@
 import { useMemo, useState} from "react";
 import type { EventFilter, TeamRule } from "../types";
 import Campo from "./Campo";
+import {x_keys, CLASSIC_ZONE_KEYS, zoneLabel, zoneLabelFromSpec} from "../Zonas";
 
 const EVENT_OPTIONS = [
     "Recovery", "Pass", "Shot", "Dribble", "Interception",
   "Duel", "Ball Recovery", "Ball Receipt", "Carry", "Foul"
 ];
 const TEAM_OPTIONS: TeamRule[] = ["any", "same", "opponent"];
-const ZONE_OPTIONS = ["", "final_third", "opponent_half", "own_half", "box_left", "box_right"] as const;
+//const ZONE_OPTIONS = ["", "final_third", "opponent_half", "own_half", "box_left", "box_right"] as const;
 
 type Props = {
   value: EventFilter[];
@@ -26,7 +27,6 @@ export default function PlayDesigner({ value, onChange }: Props){
 
     // Resaltar zona 
     const [hoverZone, setHoverZone] = useState<string | null>(null);
-
     // Para añadir pasos nuevos
     const [toolEvent, setToolEvent] = useState<string>("Recovery");
     const [toolOutcomes, setToolOutcomes] = useState<string>("");
@@ -70,6 +70,7 @@ export default function PlayDesigner({ value, onChange }: Props){
         setSel(next.length ? Math.min(i, next.length - 1) : null);
     };
 
+
     return(
          <div className="grid lg:grid-cols-2 gap-4">
 
@@ -111,11 +112,28 @@ export default function PlayDesigner({ value, onChange }: Props){
                     </label>
                 </div>
                 <label className="text-sm">
-                    Zona (opcional)
-                    <select className="mt-1 w-full border rounded px-2 py-2" value={toolZone} onChange={(e)=>setToolZone(e.target.value)}>
-                    {ZONE_OPTIONS.map(z => <option key={z} value={z}>{z || "—"}</option>)}
-                    </select>
+                Zona por defecto (nuevo paso)
+                <select
+                    className="mt-1 w-full border rounded px-2 py-2"
+                    value={toolZone}
+                    onChange={(e) => setToolZone(e.target.value)}
+                >
+                    
+                    <optgroup label="Clásicas">
+                    {CLASSIC_ZONE_KEYS.map(k => (
+                        <option key={k} value={k}>{zoneLabel(k)}</option>
+                    ))}
+                    </optgroup>
+                    <option value="">Sin zona</option>
+                    <optgroup label="Alternativas">
+                    {x_keys.map(k => (
+                        <option key={k} value={k}>{zoneLabel(k)}</option>
+                    ))}
+                    </optgroup>
+                    
+                </select>
                 </label>
+                
                 </div>
 
                 <div className="flex gap-2">
@@ -131,7 +149,14 @@ export default function PlayDesigner({ value, onChange }: Props){
                         {value.map((s, i) => (
                         <li key={i} className={`flex items-center justify-between rounded border px-2 py-1 ${i===sel ? "border-emerald-500 ring-1 ring-emerald-500" : ""}`}>
                             <button type="button" className="text-left flex-1" onClick={()=>setSel(i)}>
-                            #{i+1} · {Array.isArray(s.event) ? s.event[0] : s.event} {s.start_x!=null ? ` (${s.start_x},${s.start_y})` : s.zone ? ` · [${s.zone}]` : ""}
+                                <>
+                                #{i + 1} · {Array.isArray(s.event) ? s.event[0] : s.event}
+                                {s.start_x != null && s.start_y != null ? (
+                                    <span className="text-gray-600"> ({s.start_x},{s.start_y})</span>
+                                ) : zoneLabelFromSpec(s.zone) ? (
+                                    <span className="text-gray-600"> · [{zoneLabelFromSpec(s.zone)}]</span>
+                                ) : null}
+                                </>
                             </button>
                             <button type="button" className="text-red-600 text-sm" onClick={()=>removeStep(i)}>Quitar</button>
                         </li>
@@ -181,7 +206,7 @@ export default function PlayDesigner({ value, onChange }: Props){
 
                     {/* Aviso de hover */}
                     <div className="text-xs text-gray-600">
-                    Zona bajo el cursor: <b>{hoverZone ?? "—"}</b>
+                    Zona bajo el cursor: {hoverZone ? zoneLabel(hoverZone) : '—'}
                     </div>
                 </div>
                 </div>

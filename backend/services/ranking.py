@@ -76,24 +76,24 @@ def construir_ranking(secuencias: List[List[Dict[str, Any]]]) -> Dict[str, List[
     if  porteros:
         ranking["porteros"] = _top(porteros)
         
-    pesos = {"assist": 3, "pass_lead": 1}
-    score = Counter()
-    for key in set(list(asistentes.keys())+ list(pasadores_previos.keys())):
-        s = pesos["assist"] * asistentes.get(key, 0) + pesos["pass_lead"] * pasadores_previos.get(key, 0)
-        if s > 0:
-            score[key] = s
+    #pesos = {"assist": 3, "pass_lead": 1}
+    #score = Counter()
+    #for key in set(list(asistentes.keys())+ list(pasadores_previos.keys())):
+    #    s = pesos["assist"] * asistentes.get(key, 0) + pesos["pass_lead"] * pasadores_previos.get(key, 0)
+    #    if s > 0:
+    #        score[key] = s
             
-    def _topcreador(counter, n=10):
-        out= []
-        for pid, s in counter.most_common(n):
-            out.append({
-                "player_id": pid, "player": id2name.get(pid, "Unknown"), "score": s,
-                "assists": asistentes.get(pid, 0),
-                "passes_leading_to_shot": pasadores_previos.get(pid, 0)
-            })
-        return out
+    #def _topcreador(counter, n=10):
+    #    out= []
+    #    for pid, s in counter.most_common(n):
+    #        out.append({
+    #            "player_id": pid, "player": id2name.get(pid, "Unknown"), "score": s,
+    #            "assists": asistentes.get(pid, 0),
+    #            "passes_leading_to_shot": pasadores_previos.get(pid, 0)
+    #        })
+    #    return out
 
-    if score:
-        ranking["creadores"] = _topcreador(score)
+    #if score:
+    #    ranking["creadores"] = _topcreador(score)
         
     return ranking

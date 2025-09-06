@@ -21,6 +21,7 @@ from cache import _cache_put, _cache_get
 
 app = FastAPI(title="TFG Fútbol API")
 
+
 # CORS: permite peticiones desde Vite (puerto 5173)
 app.add_middleware(
     CORSMiddleware,
@@ -121,7 +122,13 @@ def buscar(req: SearchRequest) -> Any:
                 out.append(p)
             return out
         
-        ranking_links = {role: _with_drilldown(lst, role) for role, lst in ranking.items()}
+        #ranking_links = {role: _with_drilldown(lst, role) for role, lst in ranking.items()}
+        
+        ranking_links = {
+            role: _with_drilldown(lst, role)
+            for role, lst in ranking.items()
+            if role != "creadores"
+        }
 
         # Limitar para evitar sobrecarga
         return {

@@ -3,8 +3,11 @@ from helpers import  _norm
 from helpers import  _norm_equals
 from helpers import  _norm_in
 from helpers import _outcome_of, is_duel_won, is_goal, is_foul, is_interception_success, is_recovery, is_shot, is_success, matches_outcome
-from typing import List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
+
 DEBUG_FILE = "debug_log.txt"
+
+ZoneSpec = Union[str, Dict[str, float]]
 
 def dlog(*args):
     """Escribe logs de depuración en un archivo de texto (append)."""
@@ -16,28 +19,47 @@ def dlog(*args):
         pass
 # ------------------------
 
+_LANES = ["left_wing", "left_halfspace", "center", "right_halfspace", "right_wing"]
+_Y = [0, 16, 32, 48, 64, 80]
+GRID6x3_EDGES_X = [0, 18, 40, 60, 80, 102, 120]
+GRID6x3_EDGES_Y = [0, 18, 62, 80]
 
+def _build_extended_zones() -> Dict[str, Dict[str, float]]:
+    z: Dict[str, Dict[str, float]] = {}
 
-ZONES = {
-    "own_half": lambda x, y: x < 60,
-    "opponent_half": lambda x, y: x >= 60,
-    "final_third": lambda x, y: x >= 80,
+    # TERCERAS DEL CAMPO
 
-    # Área grande
-    "box_right": lambda x, y: 102 <= x <= 120 and 18 <= y <= 62,
-    "box_left": lambda x, y: 0 <= x <= 18 and 18 <= y <= 62,
+    for r in range(3):
+        for c in range(6):
+            x0 = GRID6x3_EDGES_X[c]
+            x1 = GRID6x3_EDGES_X[c + 1]
+            y0 = GRID6x3_EDGES_Y[r]
+            y1 = GRID6x3_EDGES_Y[r + 1]
+            key = f"g_r{r+1}_c{c+1}"
+            z[key] = {"x_min": x0, "x_max": x1, "y_min": y0, "y_max": y1}
 
-    # Área pequeña ""
-    "six_yard_right": lambda x, y: 114 <= x <= 120 and 30 <= y <= 50,
-    "six_yard_left": lambda x, y: 0 <= x <= 6 and 30 <= y <= 50,
+    
+    z["own_half"]       = {"x_min": 0,   "x_max": 60,  "y_min": 0,  "y_max": 80}
+    z["opponent_half"]  = {"x_min": 60,  "x_max": 120, "y_min": 0,  "y_max": 80}
+    z["final_third"]    = {"x_min": 80,  "x_max": 120, "y_min": 0,  "y_max": 80}
+
+    # ÁREAS
+    z["box_left"]       = {"x_min": 0,   "x_max": 18,  "y_min": 18, "y_max": 62}
+    z["box_right"]      = {"x_min": 102, "x_max": 120, "y_min": 18, "y_max": 62}
+    
+    # Áreas chicas
+    z["six_left"]       = {"x_min": 0,   "x_max": 6,   "y_min": 30, "y_max": 50}
+    z["six_right"]      = {"x_min": 114, "x_max": 120, "y_min": 30, "y_max": 50}
 
     # Córners
-    "corner_top_left": lambda x, y: x <= 2 and y <= 2,
-    "corner_bottom_left": lambda x, y: x <= 2 and y >= 78,
-    "corner_top_right": lambda x, y: x >= 118 and y <= 2,
-    "corner_bottom_right": lambda x, y: x >= 118 and y >= 78,
-}
+    z["corner_top_left"]        = {"x_min": 0,   "x_max": 2,   "y_min": 0, "y_max": 2} 
+    z["corner_bottom_left"]     = {"x_min": 0,   "x_max": 2,   "y_min": 79, "y_max": 80}
+    z["corner_top_right"]       = {"x_min": 118,   "x_max": 120,   "y_min": 0, "y_max": 2}
+    z["corner_bottom_right"]    ={"x_min": 118,   "x_max": 120,   "y_min": 78, "y_max": 80} 
+    
+    return z
 
+ZONES = _build_extended_zones()
 
 SUCCESS_OUTCOMES = {"won", "success", "successful", "complete"}  # amplía si lo necesitas
 
@@ -47,13 +69,31 @@ EVENTOS_RUIDO = {
     "Injury Stoppage", "Referee Ball-Drop", "Tactical Shift"
 }   
 
+def ver_zona(zone: Optional[ZoneSpec]) -> Optional[Dict[str, float]]:
+    #Admite: None | nombre de zona | rect dict {x_min,x_max,y_min,y_max}.
+    
+    if zone is None:
+        return None
+    
+    if isinstance(zone, dict):
+        # Validación mínima
+        for k in ("x_min","x_max","y_min","y_max"):
+            if k not in zone:
+                raise ValueError(f"zone dict missing key: {k}")
+            
+        return zone
+    if isinstance(zone, str):
+        if zone not in ZONES:
+            raise ValueError(f"Unknown zone name: {zone}")
+        return ZONES[zone]
+    raise ValueError("Invalid zone type")
 
-def dentro_de_zona(x, y, zone_name:str) -> bool:
-    fn = ZONES.get(zone_name)
-    if not fn:
-        return True  # zona desconocida => no restringir
-    return fn(x, y)
-
+def dentro_de_zona(x: float, y: float, rect: Dict[str, float], tol: float = 0.0) -> bool:
+    return (
+        (rect["x_min"] - tol) <= x <= (rect["x_max"] + tol)
+        and (rect["y_min"] - tol) <= y <= (rect["y_max"] + tol)
+    )
+    
 def rango_coordenadas(x, y, objetivo, tol_default=10):
     tol = objetivo.get("tolerance", tol_default)
     if objetivo.get("start_x") is None or objetivo.get("start_y") is None:
@@ -127,21 +167,32 @@ def comprobar_evento(evento, objetivo, tolerancia=10):
             return False
     
     # si hay zona, comprobarla
-    if objetivo.get("zone"):
-        if has_xy:
-            if not dentro_de_zona(evento["start_x"], evento["start_y"], objetivo["zone"]):
-                return False
-        else:
-            if not is_foul(evento):
-                return False
+    if objetivo.get("zone") is not None:
+        tol_local = float(objetivo.get("tolerance") or 0.0)
+        tol_glob = float(tolerancia or 0.0)
+        tol = max(tol_local, tol_glob)
+        zona = ver_zona(objetivo["zone"])
+        if zona is not None:
+            if has_xy:
+                if not dentro_de_zona(evento["start_x"], evento["start_y"], zona, tol):
+                    return False
+            else:
+                if not is_foul(evento):
+                    return False
 
     if objetivo.get("start_x") is not None and objetivo.get("start_y") is not None:
-        if has_xy:
-            if not rango_coordenadas(evento["start_x"], evento["start_y"], objetivo, tolerancia):
-                return False
-        else:
-            if not is_foul(evento):
-                return False
+        zona = ver_zona(objetivo["zone"])
+        tol_local = float(objetivo.get("tolerance") or 0.0)
+        tol_glob = float(tolerancia or 0.0)
+        tol = max(tol_local, tol_glob)
+        
+        if zona is not None:
+            if has_xy:
+                if not dentro_de_zona(evento["start_x"], evento["start_y"], zona, tol):
+                    return False
+            else:
+                if not is_foul(evento):
+                    return False
 
     if "goal" in objetivo:
         if ev_type != "shot":

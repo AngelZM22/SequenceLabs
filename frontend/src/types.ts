@@ -1,12 +1,22 @@
 export type TeamRule = "same" | "opponent" | "any";
 export type EventDTO = Record<string, unknown>;
+
+export type ZoneDict = {
+  x_min: number;
+  x_max: number;
+  y_min: number;
+  y_max: number;
+};
+
 export interface EventFilter {
     event: string | string[];
     outcomes?: string[];
     start_x?: number;
     start_y?: number;
+    end_x?: number;
+    end_y?: number;
     tolerance?: number;
-    zone?: string | Record<string,number>;
+    zone?: string | ZoneDict;
     optional?: boolean;
     team?: TeamRule;
     switch_possession?: boolean;

@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, {useState } from "react";
 import type { EventFilter } from "../types";
+import { ZONE_RECTS } from "../Zonas";
 
-type Mode = "coords" | "zone";
+type Mode = "coords" | "zone" | "segment";
 
 type Props = {
     steps : EventFilter[];
@@ -27,15 +28,48 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
-function zoneFromXY(x: number, y: number): string | null {
-    const inRightBox = x >= 102 && x <= 120 && y >= 18 && y <= 62;
-    const inLeftBox  = x >= 0   && x <= 18  && y >= 18 && y <= 62;
-    if (inRightBox) return "box_right";
-    if (inLeftBox)  return "box_left";
-    if (x >= 80) return "final_third";
-    if (x >= 60) return "opponent_half";
-    return "own_half";
 
+// Devuelve la zona más "pequeña" (más específica) que contiene (x,y)
+function zoneAt(x: number, y: number): string | null {
+  let bestId: string | null = null;
+  let bestArea = Infinity;
+  for (const [id, r] of Object.entries(ZONE_RECTS)) {
+    const inside = x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+    if (!inside) continue;
+    const area = r.w * r.h;
+    if (area < bestArea) {
+      bestArea = area;
+      bestId = id;
+    }
+  }
+  return bestId;
+}
+
+type ZoneDict = { x_min: number; x_max: number; y_min: number; y_max: number };
+
+function isZoneDict(z: unknown): z is ZoneDict {
+  return (
+    typeof z === "object" &&
+    z !== null &&
+    "x_min" in z &&
+    "x_max" in z &&
+    "y_min" in z &&
+    "y_max" in z
+  );
+}
+
+function centerOfZone(s: EventFilter): {x:number;y:number}|null {
+  if (typeof s.zone === "string") {
+    const r = ZONE_RECTS[s.zone]; if (!r) return null;
+    return { x: r.x + r.w/2, y: r.y + r.h/2 };
+  }
+  if (isZoneDict(s.zone)) {
+    return {
+      x: s.zone.x_min + (s.zone.x_max - s.zone.x_min)/2,
+      y: s.zone.y_min + (s.zone.y_max - s.zone.y_min)/2,
+    };
+  }
+  return null;
 }
 
 const EVENT_COLOR: Record<string, string> = {
@@ -84,11 +118,15 @@ export default function Campo({
       if (idx !== i) return s;
       const updated: EventFilter = { ...s, start_x: x, start_y: y };
       if (snapZones) {
-        const z = zoneFromXY(x, y);
+        const z = zoneAt(x, y);
         if (z) updated.zone = z;
       }
       return updated;
     });
+    onChange(next);
+  }
+  function setStepEnd(i: number, x: number, y: number) {
+    const next = steps.map((s, idx) => (idx === i ? { ...s, end_x: x, end_y: y } : s));
     onChange(next);
   }
   function setStepZone(i: number, zone: string) {
@@ -104,7 +142,7 @@ const [hoverZ, setHoverZ] = useState<string | null>(null);
 
 const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
   const { x, y } = pxToXY(e);
-  const z = zoneFromXY(x, y);
+  const z = zoneAt(x, y);
   setHoverZ(z);
   onHoverZone?.(z ?? null);
 };
@@ -112,20 +150,92 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
   const clickHandler = (e: React.MouseEvent<SVGSVGElement>) => {
     if (selectedIndex == null) return;
     const { x, y } = pxToXY(e);
-    if (mode === "coords") setStepCoords(selectedIndex, x, y);
-    else {
-      const z = zoneFromXY(x, y);
-      if (z) setStepZone(selectedIndex, z);
+     if (mode === "coords") {
+      setStepCoords(selectedIndex, x, y);
+    } else if (mode === "zone") {
+      const z = zoneAt(x, y); if (z) setStepZone(selectedIndex, z);
+    } else { // "segmento": primer click fija inicio, segundo click fija fin
+      const s = steps[selectedIndex];
+      if (s.start_x == null || s.start_y == null) setStepCoords(selectedIndex, x, y);
+      else setStepEnd(selectedIndex, x, y);
     }
   };
+  
 
   const contextHandler = (e: React.MouseEvent<SVGSVGElement>) => {
     e.preventDefault();
     if (selectedIndex == null) return;
     clearStep(selectedIndex);
   };
+
+  // Estado de drag: qué punto estoy moviendo
+  const [drag, setDrag] = useState<null | { i: number; which: "start" | "end" }>(null);
+
+  const onMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    hoverHandler(e); // mantengo el hover de zona
+    if (!drag) return;
+    const { x, y } = pxToXY(e);
+    const i = drag.i;
+    if (drag.which === "start") {
+        setStepCoords(i, x, y);
+    } else {
+        setStepEnd(i, x, y);
+    }
+    };
+
+    const onMouseUp = () => setDrag(null);
+    const onMouseLeave = () => setDrag(null);
   
-  const zoneRects = useMemo(() => {
+  const markers = (
+    <defs>
+      <marker id="arrowhead" orient="auto" markerWidth="8" markerHeight="8" refX="8" refY="4">
+        <path d="M0,0 L8,4 L0,8 z" fill="#111827" />
+      </marker>
+      <marker id="arrowhead-pass" orient="auto" markerWidth="8" markerHeight="8" refX="8" refY="4">
+        <path d="M0,0 L8,4 L0,8 z" fill="#2563eb" />
+      </marker>
+    </defs>
+  );
+
+   type Seg = { x1: number; y1: number; x2: number; y2: number; eventName: string; };
+  const segments: Seg[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    const name = (Array.isArray(s.event) ? s.event[0] : s.event) || "";
+    const start = (s.start_x != null && s.start_y != null)
+        ? { x: s.start_x as number, y: s.start_y as number }
+        : centerOfZone(s);
+    if (!start) continue;
+
+    // 1) Si el paso tiene fin explícito, lo uso
+    if (s.end_x != null && s.end_y != null) {
+    segments.push({ x1: start.x, y1: start.y, x2: s.end_x, y2: s.end_y, eventName: name });
+    continue;
+    }
+
+    // 2) Si no, conecto con el siguiente paso (coords o zona)
+    const next = steps[i + 1];
+    if (next) {
+    const end = (next.start_x != null && next.start_y != null)
+        ? { x: next.start_x as number, y: next.start_y as number }
+        : centerOfZone(next);
+    if (end) {
+        segments.push({ x1: start.x, y1: start.y, x2: end.x, y2: end.y, eventName: name });
+    }
+    }
+}
+  // helper para estilo de línea
+  function lineProps(evName: string) {
+    if (evName === "Pass") {
+      return { stroke: "#2563eb", dash: null, marker: "url(#arrowhead-pass)" };
+    }
+    if (evName === "Dribble" || evName === "Carry") {
+      return { stroke: "#8b5cf6", dash: "6 5", marker: "url(#arrowhead)" }; // punta neutra
+    }
+    return { stroke: "#111827", dash: null, marker: "url(#arrowhead)" };    
+  }
+
+  /*const zoneRects = useMemo(() => {
     return {
       own_half:   { x: 0,   y: 0,  w: 60,  h: 80 },
       opponent_half: { x: 60,  y: 0,  w: 60,  h: 80 },
@@ -134,7 +244,7 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
       box_right:  { x: 102, y: 18, w: 18,  h: 44 },
     };
   }, []);
-
+  */
   return (
     <div className="bg-white rounded-xl shadow p-3">
       <div className="flex items-center justify-between mb-2">
@@ -145,7 +255,9 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
        <svg
             width={width}
             height={height}
-            onMouseMove={hoverHandler}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onMouseLeave={onMouseLeave}
             onClick={clickHandler}
             onContextMenu={contextHandler}
             className="cursor-crosshair select-none bg-[#0b7a37] rounded-lg"
@@ -173,26 +285,94 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
     <rect x={fieldX(120 - 18)} y={fieldY(18)} width={sx * 18} height={sy * 44} fill="none" stroke="#e5e7eb" strokeWidth={2} />
     <rect x={fieldX(120 - 6)}  y={fieldY(30)} width={sx * 6}  height={sy * 20} fill="none" stroke="#e5e7eb" strokeWidth={2} />
 
+    {markers}
+    {/* Overlay por HOVER */}
+        {hoverZ && ZONE_RECTS[hoverZ] && (() => {
+        const r = ZONE_RECTS[hoverZ];
+        return (
+            <rect
+            x={fieldX(r.x)}
+            y={fieldY(r.y)}
+            width={r.w * sx}
+            height={r.h * sy}
+            fill="#ffffff18"
+            stroke="#ffffff66"
+            strokeWidth={2}
+            pointerEvents="none"   // <- no roba el ratón
+            />
+        );
+        })()}
     {/* Overlay de zona por hover usando zoneRects */}
-    {hoverZ && zoneRects[hoverZ as keyof typeof zoneRects] && (() => {
-    const r = zoneRects[hoverZ as keyof typeof zoneRects];
-    return (
-        <rect
-        x={fieldX(r.x)}
-        y={fieldY(r.y)}
-        width={r.w * sx}
-        height={r.h * sy}
-        fill="#ffffff22"
-        stroke="#ffffff55"
-        />
-    );
+    {/* Overlays de todas las zonas elegidas */}
+        {steps.map((s, i) => {
+        const name = Array.isArray(s.event) ? s.event[0] : s.event;
+        const color = EVENT_COLOR[name] ?? "#111827";
+
+        if (typeof s.zone === "string") {
+            const r = ZONE_RECTS[s.zone]; if (!r) return null;
+            return (
+            <rect key={`zone-${i}`}
+                x={fieldX(r.x)} y={fieldY(r.y)}
+                width={r.w * sx} height={r.h * sy}
+                fill="#ffffff22"
+                stroke={color}
+                strokeWidth={i === selectedIndex ? 3 : 2}
+            />
+            );
+        }
+        if (isZoneDict(s.zone)) {
+            const z = s.zone;
+            const r = { x: z.x_min, y: z.y_min, w: z.x_max - z.x_min, h: z.y_max - z.y_min };
+            return (
+            <rect key={`zone-${i}`}
+                x={fieldX(r.x)} y={fieldY(r.y)}
+                width={r.w * sx} height={r.h * sy}
+                fill="#ffffff22"
+                stroke={color}
+                strokeWidth={i === selectedIndex ? 3 : 2}
+            />
+            );
+        }
+        return null;
+        })}
+
+    {/* Zona del paso seleccionado (string o rect dict) */}
+        {selectedIndex != null && (() => {
+        const s = steps[selectedIndex];
+        // 1) si es string → buscamos en ZONE_RECTS
+        let r = typeof s.zone === "string" ? ZONE_RECTS[s.zone] : undefined;
+        // 2) si es dict → construimos el rect a partir de x_min..y_max
+        if (!r && isZoneDict(s.zone)) {
+            const z = s.zone
+            r = { x: z.x_min, y: z.y_min, w: z.x_max - z.x_min, h: z.y_max - z.y_min };
+        }
+        if (!r) return null;
+        return (
+            <rect
+            x={fieldX(r.x)} y={fieldY(r.y)}
+            width={r.w * sx} height={r.h * sy}
+            fill="#22c55e22" stroke="#22c55e" strokeWidth={3}
+            />
+        );
     })()}
-    
-    {/* Overlay de zona por hover (el padre me la pasa con onHoverZone) */}
-    {/* Nota: el padre decide cuál está activa y me vuelve a renderizar con una prop; */}
-    {/* en esta versión lo dibujo directamente en SearchPage para tener control, */}
-    {/* pero si quisiese, podría almacenar estado interno. */}
-    {/* (Dejo el sitio aquí por claridad del layout) */}
+    {/* NUEVO: dibujo de segmentos */}
+        {segments.map((g, i) => {
+          const { stroke, dash, marker } = lineProps(g.eventName);
+          
+          return (
+            <line
+              key={`seg-${i}`}
+              x1={fieldX(g.x1)} y1={fieldY(g.y1)}
+              x2={fieldX(g.x2)} y2={fieldY(g.y2)}
+              stroke={stroke}
+              strokeWidth={3}
+              markerEnd={marker}
+              strokeDasharray={dash ?? undefined}
+              opacity={0.95}
+            />
+          );
+        })}
+
 
     {/* Marcadores de pasos */}
         {steps.map((s, i) => {
@@ -219,8 +399,28 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
           return (
             <g key={i} onClick={(ev) => { ev.stopPropagation(); onSelect(i); }}>
               {Tol}
-              <circle cx={X} cy={Y} r={8} fill={color} stroke={selected ? "#ffffff" : "#111827"} strokeWidth={selected ? 3 : 2} />
-              <text x={X} y={Y - 12} textAnchor="middle" fontSize={12} fill="#fff">{i + 1}</text>
+              {/* Círculo de inicio (arrastrable) */}
+            <circle
+                cx={X} cy={Y} r={8}
+                fill={color}
+                stroke={selected ? "#ffffff" : "#111827"}
+                strokeWidth={selected ? 3 : 2}
+                onMouseDown={(ev)=>{ ev.stopPropagation(); setDrag({ i, which: "start" }); }}
+                style={{ cursor: "grab" }}
+            />
+            <text x={X} y={Y - 12} textAnchor="middle" fontSize={12} fill="#fff">{i + 1}</text>
+
+            {/* PUNTO FINAL si existe (también arrastrable) */}
+            {typeof s.end_x === "number" && typeof s.end_y === "number" && (
+                <>
+                <circle
+                    cx={fieldX(s.end_x)} cy={fieldY(s.end_y)} r={6}
+                    fill="#fff" stroke={color} strokeWidth={2}
+                    onMouseDown={(ev)=>{ ev.stopPropagation(); setDrag({ i, which: "end" }); }}
+                    style={{ cursor: "grab" }}
+                />
+                </>
+            )}
             </g>
           );
         })}
