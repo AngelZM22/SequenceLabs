@@ -31,3 +31,10 @@ export async function getPlayerInsights(params: {
     const r = await api.get<PlayerInsightsResponse>("/player-insights", {params});
     return r.data
 }
+
+export async function getOutcomes(event: string): Promise<string[]> {
+  const r = await api.get <{ event: string; outcomes: string[] } > ("/outcomes", {
+    params: {event},
+  });
+  return r.data?.outcomes ?? [];
+}

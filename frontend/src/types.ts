@@ -8,6 +8,19 @@ export type ZoneDict = {
   y_max: number;
 };
 
+export type EventKey =
+  | 'Recovery'
+  | 'Ball Recovery'
+  | 'Pass'
+  | 'Shot'
+  | 'Dribble'
+  | 'Interception'
+  | 'Duel'
+  | 'Ball Receipt'
+  | 'Carry'
+  | 'Foul'
+  | 'Goalkeeper';
+
 export interface EventFilter {
     event: string | string[];
     outcomes?: string[];
@@ -25,6 +38,7 @@ export interface EventFilter {
     play_pattern?: string | string[];
 
 }
+
 
 export interface SearchRequest {
     pattern: EventFilter[];

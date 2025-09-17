@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from collections import Counter
+from helpers import _norm
 import sqlite3
 import os
 
@@ -21,6 +22,29 @@ from cache import _cache_put, _cache_get
 
 app = FastAPI(title="TFG Fútbol API")
 
+EVENT_TABLE = {
+    "pass": "passes",
+    "shot": "shots",
+    "dribble": "dribbles",
+    "duel": "duels",
+    "interception": "interceptions",
+    "foul": "fouls_commited",
+    "carry": "carries",
+    "ball recovery": "ball_recoveries",
+    "ball receipt": "ball_receipts",
+    "goalkeeper": "goalkeeper",
+    "goal keeper": "goalkeeper"
+}
+
+NO_OUTCOMES = {
+    "ball recovery",  # cualquier recuperación exitosa
+    "carries",        # (suele no tener outcome categórico)
+    "recovery",                    # añade aquí los que en tu esquema no apliquen
+}
+
+def _outcome_col_for(event: str) -> str:
+    # Todas 'outcome' menos Pass -> 'outcome_name'
+    return "outcome_name" if event == "Pass" else "outcome"
 
 # CORS: permite peticiones desde Vite (puerto 5173)
 app.add_middleware(
@@ -192,3 +216,38 @@ def player_insights(role: str, player_id: Optional[int] = None, query_id: Option
         "context": stats.get("context"),
         "examples": examples
     }
+
+
+# --- outcomes por evento  ---
+@app.get("/outcomes")
+def get_outcomes(event: str):
+    """
+    Devuelve outcomes distintos para un evento según su tabla.
+    """
+    try:
+        ev = event.strip()
+        
+        if _norm(ev) in NO_OUTCOMES:
+            return {"event": ev, "outcomes": []}
+        
+        table = EVENT_TABLE.get(_norm(ev))
+        if not table:
+            return {"event": ev, "outcomes": [], "error": "Unknown event"}
+
+        col = _outcome_col_for(ev)
+        # OJO: table/col vienen de un mapping, no de parámetros del usuario -> seguro
+        sql = f"""
+            SELECT DISTINCT {col} AS outcome
+            FROM {table}
+            WHERE {col} IS NOT NULL AND TRIM({col}) <> ''
+            ORDER BY LOWER({col})
+        """
+
+        conn = sqlite3.connect(DB_PATH)      # tu helper de conexión
+        cur = conn.cursor()
+        cur.execute(sql)
+        rows = cur.fetchall()
+        outcomes = [r[0] for r in rows]
+        return {"event": ev, "outcomes": outcomes}
+    except Exception as ex:
+        return {"event": event, "outcomes": [], "error": str(ex)}

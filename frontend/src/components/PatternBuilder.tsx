@@ -1,6 +1,7 @@
 import { useState, type ChangeEvent } from "react";
-import type { EventFilter, TeamRule } from "../types";
+import type {EventFilter, TeamRule } from "../types";
 export type EventDTO = Record<string, unknown>;
+
 
 const TEAM_OPTIONS: TeamRule[] = ["any", "same", "opponent"];
 // Lista que voy a enseñar en el selector de eventos
@@ -15,6 +16,7 @@ const EVENT_OPTIONS = [
     "Ball Receipt",
     "Carry",
     "Foul",
+    "Goal Keeper"
 ];
 
 const ZONES = ["", "final_third", "opponent_half", "own_half", "box_left", "box_right"];
@@ -96,6 +98,17 @@ function PasoFila({
       tolerance: e.target.value ? Number(e.target.value) : undefined,
     });
 
+    /*
+
+    const updateSelected = <K extends keyof PatternStep>(key: K, value: PatternStep[K]) => {
+    if (selectedIndex < 0) return;
+    setSteps(prev => {
+        const next = [...prev];
+        next[selectedIndex] = { ...next[selectedIndex], [key]: value };
+        return next;
+    });
+    };*/
+
     return(
         <div 
         onClick={onSelect}
@@ -123,7 +136,7 @@ function PasoFila({
 
         {/* Outcomes */}
         <div onClick={(e) => e.stopPropagation()}>
-            <label className="text-xs text-gray-600">Outcomes (coma)</label>
+            <label className="text-xs text-gray-600">Outcomes </label>
             <OutcomesInput
                 value={paso.outcomes}
                 onOutcomesChange={(v) => onChange({ ...paso, outcomes: v })}
@@ -185,6 +198,15 @@ function PasoFila({
                 onChange={onSwitchChange}
             />
             switch
+            </label>
+
+            <label className="flex items-center gap-2 text-sm">
+            <input
+                type="checkbox"
+                checked={!!paso.optional}
+                onChange={e => onChange({ ...paso, optional: e.target.checked })}
+            />
+            opcional
             </label>
 
             {/* Botón quitar (paro propagación para no cambiar la selección al pulsar) */}
@@ -258,7 +280,7 @@ export default function PatternBuilder({
     onSelect: (i: number) => void;
 }) {
     // Añadir un paso nuevo: por defecto metemos recovery (útil)
-    const anadirPaso = () => onChange([...value, {event:"Recovery"}]);
+    const anadirPaso = () => onChange([...value, {event:""}]);
 
     //Actualizar un paso en concreto
     const actualizarPaso = (i:number, s: EventFilter) =>

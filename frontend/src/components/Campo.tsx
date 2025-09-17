@@ -1,6 +1,13 @@
 import React, {useState } from "react";
 import type { EventFilter } from "../types";
 import { ZONE_RECTS } from "../Zonas";
+import { EVENT_ICONS } from "../eventIcons";
+
+export type IconPack = Record<
+  string,
+  { url: string; size?: number; dx?: number; dy?: number }
+>;
+
 
 type Mode = "coords" | "zone" | "segment";
 
@@ -85,6 +92,158 @@ const EVENT_COLOR: Record<string, string> = {
   "Foul": "#7c3aed",
 };
 
+const GLYPH = {
+    r: 8,
+    thin: 1.6,
+    thick: 2.4,
+};
+
+// Dibuja un “badge” de flag (success/goal/switch) junto al punto
+function FlagBadge({
+  x, y, label, fill, stroke,
+}: { x: number; y: number; label: string; fill: string; stroke: string }) {
+    const w = Math.max(18, 6 + label.length * 6);
+    const h = 14;
+    return (
+        <g transform={`translate(${x},${y})`}>
+        <rect
+            x={-w / 2}
+            y={-h / 2}
+            width={w}
+            height={h}
+            rx={6}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={0.8}
+        />
+        <text x={0} y={3} fontSize={9} textAnchor="middle" fill="#111">
+            {label}
+        </text>
+        </g>
+    );
+}
+
+function IconGlyph({
+  url, x, y, size = 22, dx = 0, dy = 0,onMouseDown,
+}: {url: string; x: number; y: number; size?: number; dx?: number; dy?: number;
+  onMouseDown?: (e: React.MouseEvent<SVGImageElement>) => void;
+}) {
+  return (
+    <image
+      href={url}
+      x={x - size / 2 + dx}
+      y={y - size / 2 + dy}
+      width={size}
+      height={size}
+      preserveAspectRatio="xMidYMid meet"
+      style={{ cursor: "grab" }}
+      onMouseDown={onMouseDown}
+    />
+  );
+}
+
+
+/// Icono por tipo de evento
+function glyphForEvent(name: string, X: number, Y: number, color: string) {
+  const r = GLYPH.r;
+  const thin = GLYPH.thin;
+  const thick = GLYPH.thick;
+
+  switch (name) {
+    case "Pass":
+      // triángulo orientado “hacia arriba” como punta de flecha
+      return (
+        <polygon
+          points={`${X},${Y - r} ${X + r},${Y + r*0.8} ${X - r},${Y + r*0.8}`}
+          fill={color}
+          stroke="#111827"
+          strokeWidth={thin}
+        />
+      );
+
+    case "Shot":
+      // diana: círculo con un punto
+      return (
+        <g>
+          <circle cx={X} cy={Y} r={r} fill="#fff" stroke={color} strokeWidth={thick}/>
+          <circle cx={X} cy={Y} r={r*0.35} fill={color}/>
+        </g>
+      );
+
+    case "Dribble":
+      // zig-zag pequeño + punto
+      return (
+        <g>
+          <path d={`M ${X - r},${Y + r*0.6} L ${X - r*0.3},${Y - r*0.4} L ${X + r*0.4},${Y + r*0.3} L ${X + r},${Y - r*0.8}`}
+                fill="none" stroke={color} strokeWidth={thick}/>
+          <circle cx={X} cy={Y} r={r*0.6} fill={color}/>
+        </g>
+      );
+
+    case "Interception":
+      // X
+      return (
+        <g stroke={color} strokeWidth={thick}>
+          <line x1={X-r} y1={Y-r} x2={X+r} y2={Y+r}/>
+          <line x1={X+r} y1={Y-r} x2={X-r} y2={Y+r}/>
+        </g>
+      );
+
+    case "Duel":
+      // dos puntos enfrentados
+      return (
+        <g>
+          <circle cx={X - r*0.9} cy={Y} r={r*0.6} fill={color}/>
+          <circle cx={X + r*0.9} cy={Y} r={r*0.6} fill={color}/>
+        </g>
+      );
+
+    case "Ball Recovery":
+    case "Recovery":
+      // rombo
+      return (
+        <polygon
+          points={`${X},${Y - r} ${X + r},${Y} ${X},${Y + r} ${X - r},${Y}`}
+          fill={color}
+          stroke="#111827"
+          strokeWidth={thin}
+        />
+      );
+
+    case "Ball Receipt":
+      // anillo
+      return (
+        <g>
+          <circle cx={X} cy={Y} r={r*0.9} fill="#fff" stroke={color} strokeWidth={thick}/>
+          <circle cx={X} cy={Y} r={r*0.4} fill={color}/>
+        </g>
+      );
+
+    case "Carry":
+      // línea corta “de arrastre”
+      return (
+        <g>
+          <line x1={X - r} y1={Y} x2={X + r} y2={Y} stroke={color} strokeWidth={thick}/>
+          <circle cx={X} cy={Y} r={r*0.5} fill={color}/>
+        </g>
+      );
+
+    case "Foul":
+      // hexágono
+      return (
+        <polygon
+          points={`${X - r},${Y - r/2} ${X},${Y - r} ${X + r},${Y - r/2} ${X + r},${Y + r/2} ${X},${Y + r} ${X - r},${Y + r/2}`}
+          fill={color}
+          stroke="#111827"
+          strokeWidth={thin}
+        />
+      );
+
+    default:
+      // fallback: punto sólido (lo que ya tenías)
+      return <circle cx={X} cy={Y} r={r*0.9} fill={color} stroke="#111827" strokeWidth={thin} />;
+  }
+}
 
 export default function Campo({
     steps, selectedIndex, onSelect, onChange, mode ="coords", snapZones = true, showTolerance = true, width= 720, flip = false, onHoverZone,
@@ -147,10 +306,10 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
   onHoverZone?.(z ?? null);
 };
 
-  const clickHandler = (e: React.MouseEvent<SVGSVGElement>) => {
+const clickHandler = (e: React.MouseEvent<SVGSVGElement>) => {
     if (selectedIndex == null) return;
     const { x, y } = pxToXY(e);
-     if (mode === "coords") {
+    if (mode === "coords") {
       setStepCoords(selectedIndex, x, y);
     } else if (mode === "zone") {
       const z = zoneAt(x, y); if (z) setStepZone(selectedIndex, z);
@@ -159,19 +318,19 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
       if (s.start_x == null || s.start_y == null) setStepCoords(selectedIndex, x, y);
       else setStepEnd(selectedIndex, x, y);
     }
-  };
+};
   
 
-  const contextHandler = (e: React.MouseEvent<SVGSVGElement>) => {
+const contextHandler = (e: React.MouseEvent<SVGSVGElement>) => {
     e.preventDefault();
     if (selectedIndex == null) return;
     clearStep(selectedIndex);
-  };
+};
 
   // Estado de drag: qué punto estoy moviendo
-  const [drag, setDrag] = useState<null | { i: number; which: "start" | "end" }>(null);
+const [drag, setDrag] = useState<null | { i: number; which: "start" | "end" }>(null);
 
-  const onMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+const onMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     hoverHandler(e); // mantengo el hover de zona
     if (!drag) return;
     const { x, y } = pxToXY(e);
@@ -183,10 +342,10 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
     }
     };
 
-    const onMouseUp = () => setDrag(null);
-    const onMouseLeave = () => setDrag(null);
+const onMouseUp = () => setDrag(null);
+const onMouseLeave = () => setDrag(null);
   
-  const markers = (
+const markers = (
     <defs>
       <marker id="arrowhead" orient="auto" markerWidth="8" markerHeight="8" refX="8" refY="4">
         <path d="M0,0 L8,4 L0,8 z" fill="#111827" />
@@ -195,11 +354,11 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
         <path d="M0,0 L8,4 L0,8 z" fill="#2563eb" />
       </marker>
     </defs>
-  );
+);
 
-   type Seg = { x1: number; y1: number; x2: number; y2: number; eventName: string; };
-  const segments: Seg[] = [];
-  for (let i = 0; i < steps.length; i++) {
+type Seg = { x1: number; y1: number; x2: number; y2: number; eventName: string; };
+const segments: Seg[] = [];
+for (let i = 0; i < steps.length; i++) {
     const s = steps[i];
     const name = (Array.isArray(s.event) ? s.event[0] : s.event) || "";
     const start = (s.start_x != null && s.start_y != null)
@@ -225,7 +384,7 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
     }
 }
   // helper para estilo de línea
-  function lineProps(evName: string) {
+function lineProps(evName: string) {
     if (evName === "Pass") {
       return { stroke: "#2563eb", dash: null, marker: "url(#arrowhead-pass)" };
     }
@@ -233,7 +392,7 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
       return { stroke: "#8b5cf6", dash: "6 5", marker: "url(#arrowhead)" }; // punta neutra
     }
     return { stroke: "#111827", dash: null, marker: "url(#arrowhead)" };    
-  }
+}
 
   /*const zoneRects = useMemo(() => {
     return {
@@ -245,8 +404,8 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
     };
   }, []);
   */
-  return (
-    <div className="bg-white rounded-xl shadow p-3">
+return (
+    <div className="bg-white rounded-xl shadow p-4 lg:p-6">
       <div className="flex items-center justify-between mb-2">
         <div className="font-medium">Campo (click fija; botón derecho limpia)</div>
         <div className="text-xs text-gray-500">Modo: {mode === "coords" ? "Coordenadas" : "Zona"}</div>
@@ -273,6 +432,19 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
     <line x1={fieldX(60)} y1={fieldY(0)} x2={fieldX(60)} y2={fieldY(80)} stroke="#e5e7eb" strokeWidth={2} />
     <circle cx={fieldX(60)} cy={fieldY(40)} r={9.15 * sx} fill="none" stroke="#e5e7eb" strokeWidth={2} />
 
+    {/* Flecha de dirección de ataque */}
+    <g transform={`translate(${fieldX(60)}, ${fieldY(78)})`}>
+      <text
+        x={0}
+        y={0}
+        textAnchor="middle"
+        fontSize={14}
+        fill="white"
+        fontWeight="bold"
+      >
+        {flip ? "← Atacan hacia la izquierda" : "Atacan hacia la derecha →"}
+      </text>
+    </g>
     {/* Áreas */}
 
     {/* Izquierda */}
@@ -355,7 +527,7 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
             />
         );
     })()}
-    {/* NUEVO: dibujo de segmentos */}
+    {/* Dibujo de segmentos */}
         {segments.map((g, i) => {
           const { stroke, dash, marker } = lineProps(g.eventName);
           
@@ -396,31 +568,72 @@ const hoverHandler = (e: React.MouseEvent<SVGSVGElement>) => {
             />
           ) : null;
 
-          return (
+        const packIcon = EVENT_ICONS[name];
+
+        return (
             <g key={i} onClick={(ev) => { ev.stopPropagation(); onSelect(i); }}>
               {Tol}
-              {/* Círculo de inicio (arrastrable) */}
-            <circle
-                cx={X} cy={Y} r={8}
-                fill={color}
-                stroke={selected ? "#ffffff" : "#111827"}
-                strokeWidth={selected ? 3 : 2}
-                onMouseDown={(ev)=>{ ev.stopPropagation(); setDrag({ i, which: "start" }); }}
-                style={{ cursor: "grab" }}
-            />
-            <text x={X} y={Y - 12} textAnchor="middle" fontSize={12} fill="#fff">{i + 1}</text>
 
-            {/* PUNTO FINAL si existe (también arrastrable) */}
-            {typeof s.end_x === "number" && typeof s.end_y === "number" && (
-                <>
-                <circle
-                    cx={fieldX(s.end_x)} cy={fieldY(s.end_y)} r={6}
-                    fill="#fff" stroke={color} strokeWidth={2}
-                    onMouseDown={(ev)=>{ ev.stopPropagation(); setDrag({ i, which: "end" }); }}
-                    style={{ cursor: "grab" }}
+              {/* Icono por paso > icono de pack > glyph fallback */}
+              {packIcon?.url ? (
+                <IconGlyph
+                    url={packIcon.url}
+                    x={X}
+                    y={Y}
+                    size={packIcon.size ?? 22}
+                    dx={packIcon.dx ?? 0}
+                    dy={packIcon.dy ?? 0}
+                    onMouseDown={(e) => {
+                    e.stopPropagation();
+                    setDrag({ i, which: "start" });
+                    }}
                 />
+                ) : (
+                // fallback a la forma SVG interna
+                <>
+                    {glyphForEvent(name, X, Y, color)}
                 </>
-            )}
+                )}
+
+              {/* Aro de selección */}
+              {selected && (
+                <circle cx={X} cy={Y} r={GLYPH.r + 6} fill="none" stroke="#fff" strokeWidth={2} />
+              )}
+
+              {/* Índice del paso */}
+              <text x={X} y={Y - 12} textAnchor="middle" fontSize={12} fill="#fff">
+                {i + 1}
+              </text>
+
+              {/* Badges de flags debajo del marcador */}
+              <g transform={`translate(0, ${GLYPH.r + 16})`}>
+                {s.success && (
+                  <FlagBadge x={X - 26} y={Y} label="ok" fill="#d1fae5" stroke="#10b981" />
+                )}
+                {s.goal && (
+                  <FlagBadge x={X} y={Y} label="goal" fill="#fef3c7" stroke="#f59e0b" />
+                )}
+                {s.switch_possession && (
+                  <FlagBadge x={X + 28} y={Y} label="switch" fill="#e0f2fe" stroke="#38bdf8" />
+                )}
+              </g>
+
+              {/* Punto final si existe (arrastrable) */}
+              {typeof s.end_x === "number" && typeof s.end_y === "number" && (
+                <circle
+                  cx={fieldX(s.end_x)}
+                  cy={fieldY(s.end_y)}
+                  r={6}
+                  fill="#fff"
+                  stroke={color}
+                  strokeWidth={2}
+                  onMouseDown={(ev) => {
+                    ev.stopPropagation();
+                    setDrag({ i, which: "end" });
+                  }}
+                  style={{ cursor: "grab" }}
+                />
+              )}
             </g>
           );
         })}
