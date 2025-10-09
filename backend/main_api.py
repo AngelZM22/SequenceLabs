@@ -15,6 +15,14 @@ from services.summary import build_summary
 from services.ranking import construir_ranking
 from services.player_insights import _appears_with_role, compute_role_stats, detect_result, build_youtube_query
 
+from database import (
+  conectar,
+  options_competitions as db_options_competitions,
+  options_seasons as db_options_seasons,
+  options_teams as db_options_teams,
+  options_players as db_options_players,
+  options_matches as db_options_matches,
+)
 # Ajusta esta ruta a tu BBDD
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "futbol.db")
 
@@ -22,13 +30,15 @@ from cache import _cache_put, _cache_get
 
 app = FastAPI(title="TFG Fútbol API")
 
+conn = conectar()
+
 EVENT_TABLE = {
     "pass": "passes",
     "shot": "shots",
     "dribble": "dribbles",
     "duel": "duels",
     "interception": "interceptions",
-    "foul": "fouls_commited",
+    "foul": "fouls_committed",
     "carry": "carries",
     "ball recovery": "ball_recoveries",
     "ball receipt": "ball_receipts",
@@ -72,12 +82,13 @@ class EventFilter(BaseModel):
     
 class SearchRequest(BaseModel):
     pattern: List[EventFilter]
-    match_id: Optional[int] = None
-    team_id: Optional[int] = None
-    play_pattern: Optional[str] = None
-    competition: Optional[str] = None
     tolerancia: Optional[int] = 10
     margen_tiempo: Optional[int] = 30
+    competition_id: Optional[int] = None
+    season_id: Optional[int] = None
+    team_id: Optional[int] = None
+    player_id: Optional[int] = None
+    match_id: Optional[int] = None
 
 def _build_match_info_map(db_path, match_ids):
     if not match_ids:
@@ -112,7 +123,23 @@ def status():
 @app.post("/buscar")
 def buscar(req: SearchRequest) -> Any:
     try:
+        filtros: Dict[str, Any] = {}
+        
+        match_ids = None
+        
+        if req.match_id is not None:
+            match_ids = [req.match_id]
+        elif req.competition_id is not None and req.season_id is not None:
+            match_ids = match_ids = [m["id"] for m in db_options_matches(conn, req.competition_id, req.season_id, req.team_id)]
         secuencia = [e.model_dump(exclude_none=True) for e in req.pattern]
+        
+        if match_ids:
+            filtros["match_ids"] = match_ids
+        if req.team_id is not None:
+            filtros["team_id"] = req.team_id
+        if req.player_id is not None:
+            filtros["player_id"] = req.player_id
+            
         for step in secuencia:
             if isinstance(step.get("outcome"), list):
                 step["outcomes"] = (step.get("outcomes") or []) + step["outcome"]
@@ -120,13 +147,10 @@ def buscar(req: SearchRequest) -> Any:
 
         resultados = motor_busqueda_avanzado(
             db_path=DB_PATH,
-            secuencia=secuencia,
-            match_id=req.match_id,
-            team_id=req.team_id,                     
-            play_pattern=req.play_pattern,
-            competition=req.competition,
+            secuencia=secuencia,                     
             tolerancia=req.tolerancia,
             margen_tiempo=req.margen_tiempo,
+            filtros = filtros
         ) or []
         
         query_id = uuid4().hex[:8]
@@ -251,3 +275,24 @@ def get_outcomes(event: str):
         return {"event": ev, "outcomes": outcomes}
     except Exception as ex:
         return {"event": event, "outcomes": [], "error": str(ex)}
+    
+    
+@app.get("/options/competitions")
+def options_competitions():
+    return db_options_competitions(conn)
+
+@app.get("/options/seasons")
+def get_seasons(competition_id: int | None = None):
+    return db_options_seasons(conn, competition_id)
+
+@app.get("/options/teams")
+def get_teams(competition_id: int | None = None, season_id: int | None = None):
+    return db_options_teams(conn, competition_id, season_id)
+
+@app.get("/options/matches")
+def get_matches(competition_id: int | None = None, season_id: int | None = None, team_id: int | None = None):
+    return db_options_matches(conn, competition_id, season_id, team_id)
+
+@app.get("/options/players")
+def get_players(team_id: int | None = None, season_id: int | None = None):
+    return db_options_players(conn, team_id, season_id)

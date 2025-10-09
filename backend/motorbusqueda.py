@@ -2,7 +2,7 @@ import sqlite3
 from helpers import  _norm
 from helpers import  _norm_equals
 from helpers import  _norm_in
-from helpers import _outcome_of, is_duel_won, is_goal, is_foul, is_interception_success, is_recovery, is_shot, is_success, matches_outcome
+from helpers import _outcome_of, is_duel_won, is_goal, is_foul, is_interception_success, is_recovery, is_shot, is_success, matches_outcome, _different_player, _different_team, _same_player, _same_team
 from typing import Optional, List, Dict, Any, Union
 
 DEBUG_FILE = "debug_log.txt"
@@ -67,7 +67,7 @@ EVENTOS_RUIDO = {
     "Pressure", 
     "Player On", "Player Off", "Substitution",
     "Injury Stoppage", "Referee Ball-Drop", "Tactical Shift"
-}   
+}
 
 def ver_zona(zone: Optional[ZoneSpec]) -> Optional[Dict[str, float]]:
     #Admite: None | nombre de zona | rect dict {x_min,x_max,y_min,y_max}.
@@ -110,18 +110,18 @@ def _team_allows(event_team_id, equipo_actual, rule: str | None) -> bool: # rule
         return True
     return True
 
-
-def _is_switch_trigger(ev: dict, posesion_anterior: int | None) -> bool:
+def _is_switch_trigger(ev: dict, posesion_anterior: int | None) -> bool:  #Cuando cambia de equipo
     
     t = _norm(ev.get("type_name"))
     
-    # 1) intercepción exitosa
+    # Intercepción exitosa
     if t == "interception":
         try:
             if is_interception_success(ev):
                 return True
         except Exception:
             pass
+        
     # Duelo ganado con cambio de posesión (robo)
     if t == "duel":
         try:
@@ -132,7 +132,7 @@ def _is_switch_trigger(ev: dict, posesion_anterior: int | None) -> bool:
             pass
     if t == "ball recovery":
         return True
-    # 3) parada del portero (evento de portero “exitoso”)
+    # Parada del portero (evento de portero “exitoso”)
     if t in ("goal keeper", "goalkeeper"):
         try:
             if is_success(ev):
@@ -141,7 +141,8 @@ def _is_switch_trigger(ev: dict, posesion_anterior: int | None) -> bool:
             out = _norm(ev.get("gk_outcome_name"))
             if out in {"saved", "save", "collected", "claim", "caught", "success"}:
                 return True
-    # 4) fallback: detecta cambio explícito de equipo en la posesión
+            
+    # Detecta cambio explícito de equipo en la posesión
     if posesion_anterior is not None and ev.get("possession_team_id") != posesion_anterior:
         return True
     return False
@@ -326,7 +327,7 @@ def preprocesar_secuencia(secuencia):
         
     return {"secuencia": nueva, "tipos": tipos}
 
-def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None, team_id=None, play_pattern=None, competition=None, tolerancia=10, margen_tiempo=30):
+def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None, team_id=None, play_pattern=None, competition=None, tolerancia=10, margen_tiempo=30, filtros: Optional[Dict[str, Any]] = None):
     
     
     prep = preprocesar_secuencia(secuencia or [])
@@ -406,7 +407,26 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
         placeholders = ",".join(["?"] * len(tipos))
         conds.append(f"LOWER(e.type_name) IN ({placeholders})")
         params.extend([_norm(t) for t in tipos])
-        
+    
+    if filtros:
+        # lista de partidos
+        mids = filtros.get("match_ids")
+        if mids:
+            # admite [{id:..}] o [ids] por seguridad
+            if isinstance(mids, list) and mids and isinstance(mids[0], dict):
+                mids = [m.get("id") for m in mids if m.get("id") is not None]
+            if mids:
+                conds.append(f"e.match_id IN ({','.join(['?']*len(mids))})")
+                params.extend(mids)
+        # equipo
+        if filtros.get("team_id") is not None:
+            conds.append("e.team_id = ?")
+            params.append(int(filtros["team_id"]))
+        # jugador
+        if filtros.get("player_id") is not None:
+            conds.append("e.player_id = ?")
+            params.append(int(filtros["player_id"]))
+
     if conds:
         query_esqueleto += " WHERE " + " AND ".join(conds)
     
@@ -531,9 +551,6 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                             
                             
             continue
-                        
-              
-        
 
         if comprobar_evento(evento, objetivo, tolerancia=tolerancia):
             

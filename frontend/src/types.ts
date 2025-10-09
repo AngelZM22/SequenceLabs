@@ -8,6 +8,8 @@ export type ZoneDict = {
   y_max: number;
 };
 
+export type Option = { id: number; label: string };
+
 export type EventKey =
   | 'Recovery'
   | 'Ball Recovery'
@@ -44,7 +46,9 @@ export interface SearchRequest {
     pattern: EventFilter[];
     match_id?: number;
     team_id?: number; 
-    competition?: string; 
+    competition_id?: number; 
+    season_id?: number;
+    player_id?: number;
     tolerancia?: number; 
     margen_tiempo?: number; 
 }

@@ -97,3 +97,30 @@ def is_recovery(evento) -> bool:
         return True
     return False
 
+def _same_player(prev_ev: dict, candidate_ev: dict) -> bool:
+    pid_prev = prev_ev.get("player_id")
+    pid_next = candidate_ev.get("player_id")
+    if pid_prev is None or pid_next is None:
+        return True  # no bloqueamos si falta info
+    return pid_prev == pid_next
+
+def _same_team(prev_ev: dict, candidate_ev: dict) -> bool:
+    tid_prev = prev_ev.get("team_id")
+    tid_next = candidate_ev.get("team_id")
+    if tid_prev is None or tid_next is None:
+        return True
+    return tid_prev == tid_next
+
+def _different_player(prev_ev: dict, candidate_ev: dict) -> bool:
+    pid_prev = prev_ev.get("player_id")
+    pid_next = candidate_ev.get("player_id")
+    if pid_prev is None or pid_next is None:
+        return True
+    return pid_prev != pid_next
+
+def _different_team(prev_ev: dict, candidate_ev: dict) -> bool:
+    tid_prev = prev_ev.get("team_id")
+    tid_next = candidate_ev.get("team_id")
+    if tid_prev is None or tid_next is None:
+        return True
+    return tid_prev != tid_next

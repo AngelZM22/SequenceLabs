@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { apiStatus, buscar } from "../api";
 import type { EventFilter, SearchRequest, SearchResponse } from "../types";
+
 //import PatternBuilder from "../components/PatternBuilder";
 import InsightsDrawer from "../components/InsightsDrawer";
 import PlayDesigner from "../components/PlayDesigner";
 
+import BarraFiltros from "../components/BarraFiltros";
 // Como any da problemas
 type RankItem = { player_id: number; player_name: string; count?: number; score?: number; drilldown?: string };
 type Ranking = Record<string, RankItem[]>;
@@ -30,7 +32,11 @@ export default function SearchPage(){
     //Metricas de playerInsights
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [drawerRole, setDrawerRole] = useState<string>("tiradores");
-    const [drawerPlayerId, setDrawerPlayerId]= useState<number | undefined> (undefined);    
+    const [drawerPlayerId, setDrawerPlayerId]= useState<number | undefined> (undefined);  
+    
+    //Filtros
+    const [filters, setFilters] = useState<{competition_id?:number; season_id?:number; team_id?:number; player_id?:number}>({});
+
 
     useEffect(() => {
         apiStatus().then(s => setStatusOk(!!s.ok)).catch(()=> setStatusOk(false));
@@ -43,7 +49,14 @@ export default function SearchPage(){
         setLoading(true);
 
         try{
-            const body: SearchRequest ={ pattern, margen_tiempo: margen, tolerancia: tol};
+            const body: SearchRequest ={ pattern, 
+                margen_tiempo: margen, 
+                tolerancia: tol, 
+                competition_id:filters.competition_id,
+                season_id: filters.season_id,
+                team_id: filters.team_id,
+                player_id: filters.player_id,
+            };
             const data= await buscar(body);
             setRes(data);
 
@@ -84,8 +97,11 @@ export default function SearchPage(){
                 </span>
             </div>
 
-            {/*Diseñador en campo */}
-            <PlayDesigner value={pattern} onChange={setPattern} />
+            {/* NUEVO: barra de filtros en cascada */}
+            <BarraFiltros value={filters} onChange={setFilters} />
+
+            {/* Tu diseñador en campo se queda como está */}
+            <PlayDesigner value={pattern} onChange={setPattern} /> {/* :contentReference[oaicite:3]{index=3} */}
 
             {/* Botón de búsqueda y parámetros globales (si los quieres mantener) */}
             <form onSubmit={submit} className="bg-white p-4 rounded-xl shadow space-y-4">
