@@ -38,9 +38,34 @@ export interface EventFilter {
     success?: boolean;
     goal?: boolean;
     play_pattern?: string | string[];
-
+    player_id?: number;
 }
 
+export interface RepeatOccurrence {
+  match_id?: number;
+  minute?: number | null;
+  label?: string | null;
+  shot_outcome?: string | null; 
+  preview?: string | null;        // URL a /render/play?...
+  youtube_search?: string | null; // URL a búsqueda de YouTube
+           
+}
+
+export interface RepeatStats {
+  shots: number;
+  on_target: number;
+  goals: number;
+  pct_on_target: number;
+  pct_goals: number;
+}
+export interface RepeatGroup {
+  key: string; 
+  label: string;                  // legible (ej. "Pass(Messi→Suárez) > Shot(Suárez, Goal)")
+  tokens: string[];                    
+  count: number;                  // nº de veces que aparece el patrón
+  stats: RepeatStats;
+  occurrences: RepeatOccurrence[];
+}
 
 export interface SearchRequest {
     pattern: EventFilter[];
@@ -73,6 +98,7 @@ export interface SearchResponse {
         >;
         examples?: EventDTO[][];
         query_id?: string;
+        repeats?: RepeatGroup[];
           
 }
 

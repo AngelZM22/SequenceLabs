@@ -83,7 +83,9 @@ export default function BarraFiltros({
     });
 
     if (!team_id) {
-      const playersFetcher = season_id ? getPlayers(undefined, season_id) : getPlayers();
+      const playersFetcher = season_id 
+      ? getPlayers(undefined, season_id, competition_id) 
+      : (competition_id ? getPlayers(undefined, undefined, competition_id) : getPlayers());
       playersFetcher.then(opts => {
         setPlayers(opts);
         const fixedPlayer = ensureValid(player_id, opts);
@@ -95,7 +97,9 @@ export default function BarraFiltros({
 
   // Cambia team → players (por team + season si está)
   useEffect(() => {
-    const playersFetcher = team_id ? getPlayers(team_id, season_id) : (season_id ? getPlayers(undefined, season_id) : getPlayers());
+    const playersFetcher = team_id ? 
+    getPlayers(team_id, season_id, competition_id) 
+    : (season_id ? getPlayers(undefined, season_id, competition_id) :  (competition_id ? getPlayers(undefined, undefined, competition_id) : getPlayers()));
     playersFetcher.then(opts => {
       setPlayers(opts);
       const fixedPlayer = ensureValid(player_id, opts);

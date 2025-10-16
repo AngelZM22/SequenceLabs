@@ -88,6 +88,8 @@ export default function SearchPage(){
     // Ejemplos como "array de arrays" con al menos type_name
     const examples: EventDTO[][] = (res?.examples ?? []) as unknown as EventDTO[][];
 
+    const repeats = res?.repeats ?? [];
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -97,11 +99,11 @@ export default function SearchPage(){
                 </span>
             </div>
 
-            {/* NUEVO: barra de filtros en cascada */}
+            {/* barra de filtros en cascada */}
             <BarraFiltros value={filters} onChange={setFilters} />
 
             {/* Tu diseñador en campo se queda como está */}
-            <PlayDesigner value={pattern} onChange={setPattern} /> {/* :contentReference[oaicite:3]{index=3} */}
+            <PlayDesigner value={pattern} onChange={setPattern} teamId={filters.team_id} seasonId={filters.season_id}/> {/* :contentReference[oaicite:3]{index=3} */}
 
             {/* Botón de búsqueda y parámetros globales (si los quieres mantener) */}
             <form onSubmit={submit} className="bg-white p-4 rounded-xl shadow space-y-4">
@@ -163,6 +165,62 @@ export default function SearchPage(){
                     ))}
                 </div>
                 </section>
+            )}
+
+            {/* Patrones repetidos */}
+            {repeats.length > 0 && (
+            <section className="bg-white p-4 rounded-xl shadow">
+                <h2 className="font-medium mb-3">Patrones que más se repiten</h2>
+                <ul className="space-y-3">
+                {repeats.map((grp) => (
+                    <li key={grp.key} className="border rounded-lg">
+                    <details>
+                        <summary className="cursor-pointer px-3 py-2 flex items-center justify-between gap-3">
+                        {/* chips con tokens */}
+                        <span className="flex flex-wrap gap-1">
+                            {grp.tokens?.map((t, k) => (
+                            <span key={k} className="px-2 py-0.5 rounded-full bg-gray-100 text-xs">
+                                {t}
+                            </span>
+                            ))}
+                        </span>
+                        {/* badges: repeticiones + métricas */}
+                        <span className="flex items-center gap-2">
+                            <span className="inline-flex items-center text-xs bg-emerald-50 text-emerald-700 rounded-full px-2 py-0.5">
+                            ×{grp.count}
+                            </span>
+                            <span className="inline-flex items-center text-xs bg-blue-50 text-blue-700 rounded-full px-2 py-0.5">
+                            {grp.stats?.pct_on_target ?? 0}% a puerta
+                            </span>
+                            <span className="inline-flex items-center text-xs bg-orange-50 text-orange-700 rounded-full px-2 py-0.5">
+                            {grp.stats?.pct_goals ?? 0}% gol
+                            </span>
+                        </span>
+                        </summary>
+
+                        <div className="p-3 border-t">
+                        <ul className="text-sm divide-y">
+                            {grp.occurrences.map((occ, i) => (
+                            <li key={i} className="py-2 flex items-center justify-between gap-3">
+                                <div className="truncate">
+                                <span className="font-medium">{occ.label ?? (occ.match_id ? `Match ${occ.match_id}` : "Partido")}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                {occ.shot_outcome && (
+                                    <span className="text-xs bg-gray-100 rounded px-2 py-0.5">{occ.shot_outcome}</span>
+                                )}
+                                {occ.preview && <a className="underline text-xs" href={occ.preview} target="_blank" rel="noreferrer">Preview</a>}
+                                {occ.youtube_search && <a className="underline text-xs" href={occ.youtube_search} target="_blank" rel="noreferrer">YouTube</a>}
+                                </div>
+                            </li>
+                            ))}
+                        </ul>
+                        </div>
+                    </details>
+                    </li>
+                ))}
+                </ul>
+            </section>
             )}
             {/* Ejemplos */}
             {examples.length > 0 && (

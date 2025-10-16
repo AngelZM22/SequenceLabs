@@ -1,9 +1,11 @@
 import { useState, useEffect} from "react";
 import type { EventFilter, TeamRule } from "../types";
 import Campo from "./Campo";
-import {x_keys, CLASSIC_ZONE_KEYS, zoneLabel, zoneLabelFromSpec} from "../Zonas";
 import { OUTCOMES_FALLBACK } from "../OutcomesFallback";
-import { getOutcomes } from "../api";
+import { getOutcomes, getPlayers } from "../api";
+import { zoneLabel, zoneLabelFromSpec } from "../Zonas";
+import type {Option} from "../types";
+
 
 
 const EVENT_OPTIONS = [
@@ -18,9 +20,11 @@ const TEAM_OPTIONS: TeamRule[] = ["any", "same", "opponent"];
 type Props = {
   value: EventFilter[];
   onChange: (v: EventFilter[]) => void;
+  teamId?: number;
+  seasonId?: number;
 };
 
-export default function PlayDesigner({ value, onChange }: Props){
+export default function PlayDesigner({ value, onChange, teamId, seasonId }: Props){
 
     const [sel, setSel] = useState<number | null>(value.length ? 0 : null);
 
@@ -37,26 +41,51 @@ export default function PlayDesigner({ value, onChange }: Props){
     const [toolOutcomes, setToolOutcomes] = useState<string[]>([]);
     const [availableOutcomes, setAvailableOutcomes] = useState<string[]>([]);
 
-    useEffect(() => {
-    let cancel = false;
+    const [toolPlayerId, setToolPlayerId] = useState<number | undefined>(undefined);
+    const [playerOptions, setPlayerOptions] = useState<Option[]>([]);
 
-    async function load() {
-        const fromApi = await getOutcomes(toolEvent);
-        const list = (fromApi && fromApi.length
-        ? fromApi
-        : (OUTCOMES_FALLBACK[toolEvent] || [])
-        ).sort((a, b) => a.localeCompare(b));
+    const editing = sel != null;
+    const current = editing ? value[sel!] : undefined;
 
-        if (!cancel) {
-        setAvailableOutcomes(list);
-        // si el evento cambia, limpia seleccionados que ya no existan
-        setToolOutcomes(prev => prev.filter(o => list.includes(o)));
+    const evForOutcomes =
+        editing
+            ? (Array.isArray(current?.event) ? current?.event[0] : (current?.event as string) || "")
+            : toolEvent;
+
+        useEffect(() => {
+        let cancel = false;
+        async function load() {
+            const fromApi = await getOutcomes(evForOutcomes);
+            const list = (fromApi && fromApi.length ? fromApi : (OUTCOMES_FALLBACK[evForOutcomes] || []))
+            .sort((a, b) => a.localeCompare(b));
+
+            if (!cancel) {
+            setAvailableOutcomes(list);
+            // Si cambia el catálogo, limpia seleccionados que ya no existan
+            setToolOutcomes(prev => prev.filter(o => list.includes(o)));
+            }
         }
-    }
+        load();
+        return () => { cancel = true; };
+        }, [evForOutcomes]);
 
-    load();
-    return () => { cancel = true; };
-    }, [toolEvent]);
+    useEffect(() => {
+        let cancel = false;
+
+        async function loadPlayers() {
+            // Filtra por team si hay team; si no, por season; si no, vacío
+            const opts = await (
+            teamId ? getPlayers(teamId, seasonId)
+                    : (seasonId ? getPlayers(undefined, seasonId) : Promise.resolve([]))
+            );
+            if (!cancel) setPlayerOptions(opts || []);
+        }
+
+        loadPlayers();
+        return () => { cancel = true; };
+        }, [teamId, seasonId]);
+
+    
 
     const [toolTeam, setToolTeam] = useState<TeamRule>("any");
     const [toolSuccess, setToolSuccess] = useState(false);
@@ -64,8 +93,21 @@ export default function PlayDesigner({ value, onChange }: Props){
     const [toolSwitch, setToolSwitch] = useState(false);
     const [toolOptional, setToolOptional] = useState(false);
     const [toolTol, setToolTol] = useState<number>(10);
-    const [toolZone, setToolZone] = useState<string>("");
     
+    useEffect(() => {
+        if (sel == null) return;
+        const s = value[sel];
+        const ev = Array.isArray(s.event) ? s.event[0] : (s.event as string) || "";
+        setToolEvent(ev);
+        setToolOutcomes(s.outcomes ?? []);
+        setToolTeam((s.team as TeamRule) ?? "any");
+        setToolSuccess(!!s.success);
+        setToolGoal(!!s.goal);
+        setToolSwitch(!!s.switch_possession);
+        setToolOptional(!!s.optional);
+        setToolTol(s.tolerance ?? 10);
+        setToolPlayerId(s.player_id ?? undefined);
+        }, [sel, value]);
 
 /*    const outcomesArr = useMemo(
     () => toolOutcomes.split(",").map(s => s.trim()).filter(Boolean),
@@ -82,7 +124,8 @@ export default function PlayDesigner({ value, onChange }: Props){
             switch_possession: toolSwitch || undefined,
             optional: toolOptional || undefined,
             tolerance: toolTol || undefined,
-            zone: toolZone || undefined,
+            //zone: toolZone || undefined,
+            player_id: toolPlayerId ?? undefined,
         };
 
         const next = [...value, nuevo];
@@ -91,8 +134,8 @@ export default function PlayDesigner({ value, onChange }: Props){
 
     };
 
-    //const updateStep = (i: number, patch: Partial<EventFilter>) =>
-    //    onChange(value.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+    const updateStep = (i: number, patch: Partial<EventFilter>) =>
+        onChange(value.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
 
     const removeStep = (i: number) => {
         const next = value.filter((_, idx) => idx !== i);
@@ -100,31 +143,53 @@ export default function PlayDesigner({ value, onChange }: Props){
         setSel(next.length ? Math.min(i, next.length - 1) : null);
     };
 
-const handleReset = () => {
-  // Vaciar pasos
-  onChange([]);
+    const onToggleGoal = (v: boolean) => {
+    if (editing) updateStep(sel!, { goal: v || undefined });
+    else setToolGoal(v);
+    };
 
-  // Quitar selección y hover
-  setSel(null);
-  setHoverZone(null);
+    const onToggleSuccess = (v: boolean) => {
+    if (editing) updateStep(sel!, { success: v || undefined });
+    else setToolSuccess(v);
+    };
 
-  // Resetear herramienta (ajústalo a tus defaults)
-  setToolEvent("");
-  setToolOutcomes([]);
-  setToolTeam("any");
-  setToolSuccess(false);
-  setToolGoal(false);
-  setToolSwitch(false);
-  setToolOptional(false);
-  setToolTol(10);
-  setToolZone("");
+    const onToggleSwitch = (v: boolean) => {
+    if (editing) updateStep(sel!, { switch_possession: v || undefined });
+    else setToolSwitch(v);
+    };
 
-  // Resetear ajustes del campo si quieres
-  setMode("coords");
-  setSnapZones(true);
-  setShowTol(true);
-  setFlip(false);
-};
+    const onToggleOptional = (v: boolean) => {
+    if (editing) updateStep(sel!, { optional: v || undefined });
+    else setToolOptional(v);
+    };
+
+
+    
+
+    const handleReset = () => {
+    // Vaciar pasos
+    onChange([]);
+
+    // Quitar selección y hover
+    setSel(null);
+    setHoverZone(null);
+
+    // Resetear herramienta (ajústalo a tus defaults)
+    setToolEvent("");
+    setToolOutcomes([]);
+    setToolTeam("any");
+    setToolSuccess(false);
+    setToolGoal(false);
+    setToolSwitch(false);
+    setToolOptional(false);
+    setToolTol(10);
+
+    // Resetear ajustes del campo si quieres
+    setMode("coords");
+    setSnapZones(true);
+    setShowTol(true);
+    setFlip(false);
+    };
     
 
     const Flag = ({ children }: { children: React.ReactNode }) => (
@@ -134,7 +199,7 @@ const handleReset = () => {
 );
 
     return(
-         <div className="grid lg:grid-cols-2 gap-8">
+         <div className="space-y-6">
 
             {/* Panel de controles */}
             <div className="space-y-4 bg-white rounded-xl shadow p-4">
@@ -155,16 +220,23 @@ const handleReset = () => {
                     <div className="text-xs text-gray-500">— Sin outcomes para este evento —</div>
                     )}
                     {availableOutcomes.map((o) => {
-                    const checked = toolOutcomes.includes(o);
+                    const checked = editing
+                        ? (current?.outcomes?.includes(o) ?? false)
+                        : toolOutcomes.includes(o);
                     return (
                         <label key={o} className="flex items-center gap-2 text-sm">
                         <input
                             type="checkbox"
                             checked={checked}
                             onChange={(e) => {
-                            setToolOutcomes(prev =>
-                                e.target.checked ? [...prev, o] : prev.filter(x => x !== o)
-                            );
+                            const checked = e.currentTarget.checked;
+                            if (editing) {
+                                const prev = current?.outcomes ?? [];
+                                const next = checked ? [...prev, o] : prev.filter(x => x !== o);
+                                updateStep(sel!, { outcomes: next.length ? next : undefined });
+                            } else {
+                                setToolOutcomes(prev => checked ? [...prev, o] : prev.filter(x => x !== o));
+                            }
                             }}
                         />
                         {o}
@@ -175,50 +247,63 @@ const handleReset = () => {
                 </label>
                 <label className="text-sm">
                     Team
-                    <select className="mt-1 w-full border rounded px-2 py-2" value={toolTeam} onChange={(e)=>setToolTeam(e.target.value as TeamRule)}>
-                    {TEAM_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                    <select
+                        className="mt-1 w-full border rounded px-2 py-2"
+                        value={editing ? (current?.team ?? "any") : toolTeam}
+                        onChange={(e)=>{
+                            const v = e.target.value as TeamRule;
+                            if (editing) updateStep(sel!, { team: v === "any" ? undefined : v });
+                            else setToolTeam(v);
+                        }}
+                        >
+                        {TEAM_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                 </label>
                 <label className="text-sm">
                     Tolerancia
-                    <input type="number" className="mt-1 w-full border rounded px-2 py-2" value={toolTol} onChange={(e)=>setToolTol(Number(e.target.value)||0)} />
+                    <input
+                        type="number"
+                        className="mt-1 w-full border rounded px-2 py-2"
+                        value={editing ? (current?.tolerance ?? toolTol) : toolTol}
+                        onChange={(e)=> {
+                            const n = Number(e.target.value) || 0;
+                            if (editing) updateStep(sel!, { tolerance: n || undefined });
+                            else setToolTol(n);
+                        }}
+                        />
                 </label>
                 <div className="flex items-end gap-4">
                     <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={toolSuccess} onChange={(e)=>setToolSuccess(e.target.checked)} /> success
+                    <input type="checkbox" checked={editing ? !!current?.success : toolSuccess} onChange={(e)=>onToggleSuccess(e.target.checked)} /> success
                     </label>
                     <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={toolGoal} onChange={(e)=>setToolGoal(e.target.checked)} /> goal
+                    <input type="checkbox" checked={editing ? !!current?.goal : toolGoal} onChange={(e)=>onToggleGoal(e.target.checked)} /> goal
                     </label>
                     <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={toolSwitch} onChange={(e)=>setToolSwitch(e.target.checked)} /> switch
+                    <input type="checkbox" checked={editing ? !!current?.switch_possession : toolSwitch} onChange={(e)=>onToggleSwitch(e.target.checked)} /> switch
                     </label>
                     <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={toolOptional} onChange={(e)=>setToolOptional(e.target.checked)} /> optional
+                    <input type="checkbox" checked={editing ? !!current?.optional: toolOptional} onChange={(e)=>onToggleOptional(e.target.checked)} /> optional
                     </label>
                 </div>
-                <label className="text-sm">
-                Zona por defecto (nuevo paso)
-                <select
-                    className="mt-1 w-full border rounded px-2 py-2"
-                    value={toolZone}
-                    onChange={(e) => setToolZone(e.target.value)}
-                >
-                    
-                    <optgroup label="Clásicas">
-                    {CLASSIC_ZONE_KEYS.map(k => (
-                        <option key={k} value={k}>{zoneLabel(k)}</option>
-                    ))}
-                    </optgroup>
-                    <option value="">Sin zona</option>
-                    <optgroup label="Alternativas">
-                    {x_keys.map(k => (
-                        <option key={k} value={k}>{zoneLabel(k)}</option>
-                    ))}
-                    </optgroup>
-                    
-                </select>
-                </label>
+
+                <div className="space-y-2">
+                    <label className="block text-sm font-medium">Jugador (opcional para este paso)</label>
+                    <select
+                        className="border rounded px-3 py-2 w-full"
+                        value={editing ? (current?.player_id ?? "") : (toolPlayerId ?? "")}
+                        onChange={e => {
+                        const v = e.target.value ? Number(e.target.value) : undefined;
+                        if (editing) updateStep(sel!, { player_id: v });
+                        else setToolPlayerId(v);
+                        }}
+                        >
+                        <option value="">(cualquiera)</option>
+                        {playerOptions.map(o => (
+                        <option key={o.id} value={o.id}>{o.label}</option>
+                        ))}
+                    </select>
+                </div>
                 
                 </div>
 

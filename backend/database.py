@@ -723,27 +723,32 @@ def refrescar_team_comp_season():             # Equipos que participaron en una 
     conn.commit(); conn.close()
 
 
-def refrescar_player_team_season():               # Jugadores que jugaron en equipos, se rellena desde lineup (plantillas), sino desde events
+def refrescar_player_team_season():
     conn = conectar()
     cur = conn.cursor()
     cur.execute("DELETE FROM player_team_season")
-    
+
+    # Agregar por temporada a partir de quién estuvo inscrito en cada partido
     cur.execute("""
       INSERT OR IGNORE INTO player_team_season(team_id, season_id, player_id, player_name)
-      SELECT DISTINCT l.team_id, m.season_id, l.player_id, COALESCE(l.player_name, e.player_name)
-      FROM lineup l
-      JOIN matches m ON m.match_id = l.match_id
-      LEFT JOIN events e ON e.player_id = l.player_id AND e.team_id = l.team_id
-      WHERE l.player_id IS NOT NULL AND l.team_id IS NOT NULL AND m.season_id IS NOT NULL
+      SELECT
+        pmt.team_id,
+        m.season_id,
+        pmt.player_id,
+        COALESCE(l.player_name, MAX(e.player_name)) AS player_name
+      FROM player_match_team pmt
+      JOIN matches m
+        ON m.match_id = pmt.match_id
+      LEFT JOIN lineup l
+        ON l.match_id = pmt.match_id AND l.player_id = pmt.player_id
+      LEFT JOIN events e
+        ON e.match_id = pmt.match_id AND e.player_id = pmt.player_id AND e.team_id = pmt.team_id
+      WHERE pmt.player_id IS NOT NULL AND pmt.team_id IS NOT NULL AND m.season_id IS NOT NULL
+      GROUP BY pmt.team_id, m.season_id, pmt.player_id
     """)
-    cur.execute("""
-      INSERT OR IGNORE INTO player_team_season(team_id, season_id, player_id, player_name)
-      SELECT DISTINCT e.team_id, m.season_id, e.player_id, e.player_name
-      FROM events e
-      JOIN matches m ON m.match_id = e.match_id
-      WHERE e.player_id IS NOT NULL AND e.team_id IS NOT NULL AND m.season_id IS NOT NULL
-    """)
-    conn.commit(); conn.close()
+
+    conn.commit()
+    conn.close()
     
 def refrescar():
     refrescar_comp_season()
@@ -796,17 +801,44 @@ def options_teams(conn, competition_id: Optional[int] = None, season_id: Optiona
     return [{"id": r[0], "label": r[1]} for r in cur.fetchall()]
 
 
-def options_players(conn, team_id: Optional[int] = None, season_id: Optional[int] = None):
+def options_players (conn, team_id: Optional[int] = None, season_id: Optional[int] = None, competition_id: Optional[int] = None ):
     cur = conn.cursor()
+    
     qs = ["SELECT DISTINCT player_id, COALESCE(player_name,'') AS label FROM player_team_season WHERE 1=1"]
     args: list[int] = []
+    
     if team_id is not None:
-        qs.append("AND team_id = ?"); args.append(team_id)
-    if season_id is not None:
-        qs.append("AND season_id = ?"); args.append(season_id)
-    qs.append("ORDER BY label")
-    cur.execute("\n".join(qs), tuple(args))
-    return [{"id": r[0], "label": r[1]} for r in cur.fetchall()]
+        qs = ["SELECT DISTINCT player_id, COALESCE(player_name,'') AS label FROM player_team_season WHERE team_id = ?"]
+        args = [team_id]
+        if season_id is not None:
+            qs.append("AND season_id = ?"); args.append(season_id)
+        qs.append("ORDER BY label")
+        cur.execute("\n".join(qs), tuple(args))
+        return [{"id": r[0], "label": r[1]} for r in cur.fetchall()]
+
+    # Caso 2: Team = any, pero hay competition/season → jugadores que jugaron en esos partidos
+    if competition_id is not None or season_id is not None:
+        qs = ["""
+          SELECT DISTINCT pmt.player_id, COALESCE(e.player_name, l.player_name, '') AS label
+          FROM player_match_team pmt
+          JOIN matches m ON m.match_id = pmt.match_id
+          LEFT JOIN events e
+            ON e.match_id = pmt.match_id AND e.player_id = pmt.player_id AND e.team_id = pmt.team_id
+          LEFT JOIN lineup l
+            ON l.match_id = pmt.match_id AND l.player_id = pmt.player_id
+          WHERE 1=1
+        """]
+        args: list[int] = []
+        if competition_id is not None:
+            qs.append("AND m.competition_id = ?"); args.append(competition_id)
+        if season_id is not None:
+            qs.append("AND m.season_id = ?"); args.append(season_id)
+        qs.append("ORDER BY label")
+        cur.execute("\n".join(qs), tuple(args))
+        return [{"id": r[0], "label": r[1] or ""} for r in cur.fetchall()]
+
+    # Caso 3: sin filtros → devuelve vacío (evita la lista global gigante)
+    return []
 
 
 def options_matches(conn,
@@ -831,7 +863,7 @@ def options_matches(conn,
         qs.append("AND m.season_id = ?")
         args.append(season_id)
 
-    # ← CAMBIO CLAVE: filtrar por equipo usando player_match_team (no hay home_team_id/away_team_id en matches)
+    # Filtrar por equipo usando player_match_team (no hay home_team_id/away_team_id en matches)
     if team_id is not None:
         qs.append("""
           AND EXISTS (

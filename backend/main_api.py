@@ -9,11 +9,13 @@ import sqlite3
 import os
 
 
+
 from motorbusqueda import motor_busqueda_avanzado
 
 from services.summary import build_summary
 from services.ranking import construir_ranking
 from services.player_insights import _appears_with_role, compute_role_stats, detect_result, build_youtube_query
+from repeats import group_repeats_aggregated
 
 from database import (
   conectar,
@@ -48,7 +50,7 @@ EVENT_TABLE = {
 
 NO_OUTCOMES = {
     "ball recovery",  # cualquier recuperación exitosa
-    "carries",        # (suele no tener outcome categórico)
+    "carry",        # (suele no tener outcome categórico)
     "recovery",                    # añade aquí los que en tu esquema no apliquen
 }
 
@@ -177,13 +179,30 @@ def buscar(req: SearchRequest) -> Any:
             for role, lst in ranking.items()
             if role != "creadores"
         }
+        
+        mids = {
+            ev.get("match_id")
+            for seq in resultados for ev in seq
+            if ev.get("match_id") is not None
+        }
+        match_info_map = _build_match_info_map(DB_PATH, list(mids))
+
+        repeats = group_repeats_aggregated(
+            resultados=resultados,
+            build_youtube_query=build_youtube_query,
+            match_info_map=match_info_map,
+            max_groups=25,
+            max_occurrences=15,
+        )
+
 
         # Limitar para evitar sobrecarga
         return {
             "summary": summary,
             "ranking": ranking_links,
             "examples": resultados[:3],
-            "query_id": query_id   
+            "query_id": query_id,
+            "repeats": repeats,   
         }
 
     except Exception as e:
@@ -294,5 +313,5 @@ def get_matches(competition_id: int | None = None, season_id: int | None = None,
     return db_options_matches(conn, competition_id, season_id, team_id)
 
 @app.get("/options/players")
-def get_players(team_id: int | None = None, season_id: int | None = None):
-    return db_options_players(conn, team_id, season_id)
+def get_players(team_id: int | None = None, season_id: int | None = None, competition_id: int | None = None):
+    return db_options_players(conn, team_id, season_id, competition_id)

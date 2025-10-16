@@ -161,6 +161,10 @@ def comprobar_evento(evento, objetivo, tolerancia=10):
     if ev_type not in tipos_norm:
         return False
 
+    if objetivo.get("player_id") is not None:
+        if evento.get("player_id") != objetivo["player_id"]:
+            return False
+    
     # si hay patrón de juego, comprobarlo
     if objetivo.get("play_pattern"):
         if not evento["play_pattern_name"] or _norm(evento.get("play_pattern_name")) != _norm(objetivo["play_pattern"]):
@@ -312,6 +316,10 @@ def preprocesar_secuencia(secuencia):
             for param in ["start_x", "start_y", "tolerance", "zone"]:
                 if actual.get(param) is not None:
                     combo[param] = actual[param]
+                    
+            for k in ("goal", "outcome", "outcomes", "success", "player_id", "team"):
+                if siguiente.get(k) is not None:
+                    combo[k] = siguiente[k]
 
             nueva.append(combo)
             i += 2  # saltamos dos
@@ -349,6 +357,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                 
                 p.shot_assist            AS pass_is_shot_assist,
                 p.shot_assist_id         AS pass_shot_assist_id,
+                p.receiver_name         AS pass_receiver_name,
                 s.goal                   AS shot_goal,
                 s.outcome                AS shot_outcome_name,
                 d.outcome                AS dribble_outcome_name,
@@ -489,7 +498,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
             
         if objetivo and objetivo.get("combo") and objetivo["event"] == "Pass→Shot" :
             
-            if _norm(evento["type_name"]) == "pass" and int(evento.get("pass_is_shot_assist") or 0) == 1:
+            if _norm(evento["type_name"]) == "pass" :
                 
                 if objetivo.get("play_pattern"):
                     ev_pp = (evento.get("play_pattern_name") or "").lower()
@@ -505,20 +514,19 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                         # Buscar el Shot asociado en la misma jugada
                 cursor2 = conn.cursor()
                 cursor2.execute("""
-                            SELECT e.event_id, e.match_id, e.type_name, e.ts_abs, e.team_id,
-                                e.player_name, e.player_id,
-                                s.start_x, s.start_y,
-                                s.goal    AS shot_goal,
-                                s.outcome AS shot_outcome_name
-                            FROM events e
-                            JOIN shots s ON s.event_id = e.event_id
-                            WHERE e.match_id = ? AND e.team_id = ? 
-                            AND e.type_name = 'Shot' 
-                            AND e.ts_abs >= ?
-                            AND e.ts_abs <= ?
-                            ORDER BY e.ts_abs ASC
-                            LIMIT 1
-                        """, (evento["match_id"], evento["team_id"], evento["ts_abs"], evento["ts_abs"] + margen_tiempo))
+                    SELECT e.event_id, e.match_id, e.type_name, e.ts_abs, e.team_id,
+                        e.player_name, e.player_id,
+                        s.start_x, s.start_y,
+                        s.goal    AS shot_goal,
+                        s.outcome AS shot_outcome_name
+                    FROM events e
+                    JOIN shots s ON s.event_id = e.event_id
+                    WHERE e.match_id = ? AND e.team_id = ?
+                    AND e.type_name = 'Shot'
+                    AND e.ts_abs > ? AND e.ts_abs <= ?
+                    ORDER BY e.ts_abs ASC
+                    LIMIT 1
+                """, (evento["match_id"], evento["team_id"], evento["ts_abs"], evento["ts_abs"] + margen_tiempo))
                 shot = cursor2.fetchone()
 
                 if not shot:
@@ -528,16 +536,22 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                     shdict = dict(shot)
                         
                 if "goal" in objetivo and bool(objetivo["goal"]) != bool(shdict.get("shot_goal")):
-                    # no es el tipo de tiro que queremos (gol/no gol)
-                    # reseteamos secuencia parcial
                     actual = []
                     continue
-                        
+                
+                outs = []
                 if objetivo.get("outcome"):
                     if _norm(shdict.get("shot_outcome_name")) != _norm(objetivo["outcome"]):
                         actual = []
                         continue
-                            
+                
+                outs += (objetivo.get("outcomes") or [])
+                
+                if outs:
+                    shot_out_norm = _norm(shdict.get("shot_outcome_name"))
+                    if all(_norm(o) != shot_out_norm for o in outs):
+                        actual = []
+                        continue
                 actual.append(shdict)
                             
                 ultimo_tiempo = shdict["ts_abs"]
