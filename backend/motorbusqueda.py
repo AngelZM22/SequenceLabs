@@ -94,11 +94,15 @@ def dentro_de_zona(x: float, y: float, rect: Dict[str, float], tol: float = 0.0)
         and (rect["y_min"] - tol) <= y <= (rect["y_max"] + tol)
     )
     
-def rango_coordenadas(x, y, objetivo, tol_default=10):
-    tol = objetivo.get("tolerance", tol_default)
-    if objetivo.get("start_x") is None or objetivo.get("start_y") is None:
-        return True
-    return abs(x - objetivo["start_x"]) <= tol and abs(y - objetivo["start_y"]) <= tol
+def rango_coordenadas(x, y, objetivo, tol_default=10.0):
+    sx = objetivo.get("start_x")
+    sy = objetivo.get("start_y")
+    if sx is None or sy is None:
+        # Si el patrón no tiene coordenadas, mejor NO aceptar todo a ciegas
+        return False
+
+    tol = float(objetivo.get("tolerance") or tol_default)
+    return abs(x - sx) <= tol and abs(y - sy) <= tol
 
 def _team_allows(event_team_id, equipo_actual, rule: str | None) -> bool: # rule: "same" | "opponent" | "any" | None
     
@@ -172,32 +176,34 @@ def comprobar_evento(evento, objetivo, tolerancia=10):
             return False
     
     # si hay zona, comprobarla
-    if objetivo.get("zone") is not None:
+    zone_spec = objetivo.get("zone")
+    if zone_spec is not None:
         tol_local = float(objetivo.get("tolerance") or 0.0)
         tol_glob = float(tolerancia or 0.0)
         tol = max(tol_local, tol_glob)
-        zona = ver_zona(objetivo["zone"])
+        zona = ver_zona(zone_spec)
         if zona is not None:
             if has_xy:
                 if not dentro_de_zona(evento["start_x"], evento["start_y"], zona, tol):
                     return False
             else:
+                # si no hay coordenadas, solo tiene sentido restringir
+                # por zona en eventos tipo falta / duelo
                 if not is_foul(evento):
                     return False
 
-    if objetivo.get("start_x") is not None and objetivo.get("start_y") is not None:
-        zona = ver_zona(objetivo["zone"])
+    sx = objetivo.get("start_x")
+    sy = objetivo.get("start_y")
+    if sx is not None and sy is not None:
         tol_local = float(objetivo.get("tolerance") or 0.0)
         tol_glob = float(tolerancia or 0.0)
         tol = max(tol_local, tol_glob)
-        
-        if zona is not None:
-            if has_xy:
-                if not dentro_de_zona(evento["start_x"], evento["start_y"], zona, tol):
-                    return False
-            else:
-                if not is_foul(evento):
-                    return False
+
+        if not has_xy:
+            return False  # el evento no tiene coords -> no matchea
+
+        if not rango_coordenadas(evento["start_x"], evento["start_y"], objetivo, tol_default=tol):
+            return False
 
     if "goal" in objetivo:
         if ev_type != "shot":
@@ -302,21 +308,28 @@ def preprocesar_secuencia(secuencia):
             continue    
         
                     
-        # Detectar combo Pass → Shot
+         # Detectar combo Pass → Shot
         if ev_norm == "pass" and siguiente and sig_norm == "shot":
             
             tipos.append("Shot")
             combo = {"event": "Pass→Shot", "combo": True}
 
-            # Si el primer evento tiene play_pattern, lo mantenemos
+            # Si el primer evento (pase) tiene play_pattern, lo mantenemos
             if actual.get("play_pattern"):
                 combo["play_pattern"] = actual["play_pattern"]
 
-            # Si el primer evento tiene coords o tolerancia, también
+            # Coords / tolerancia / zona del PASE
             for param in ["start_x", "start_y", "tolerance", "zone"]:
                 if actual.get(param) is not None:
                     combo[param] = actual[param]
-                    
+
+            # Coords / tolerancia / zona del TIRO (guardadas aparte)
+            for param in ["start_x", "start_y", "tolerance", "zone"]:
+                val = siguiente.get(param)
+                if val is not None:
+                    combo[f"shot_{param}"] = val
+
+            # Atributos del tiro: goal/outcome(s)/success/jugador/equipo
             for k in ("goal", "outcome", "outcomes", "success", "player_id", "team"):
                 if siguiente.get(k) is not None:
                     combo[k] = siguiente[k]
@@ -414,7 +427,8 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
     
     if tipos:
         placeholders = ",".join(["?"] * len(tipos))
-        conds.append(f"LOWER(e.type_name) IN ({placeholders})")
+        # Normalizamos también en SQL: quitamos '*' para que 'Ball Receipt*' entre como 'ball receipt'
+        conds.append(f"LOWER(REPLACE(e.type_name, '*', '')) IN ({placeholders})")
         params.extend([_norm(t) for t in tipos])
     
     if filtros:
@@ -498,20 +512,36 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
             
         if objetivo and objetivo.get("combo") and objetivo["event"] == "Pass→Shot" :
             
-            if _norm(evento["type_name"]) == "pass" :
+            if _norm(evento["type_name"]) == "pass":
                 
+                # 1) Filtro por patrón de juego del pase (como ya tenías)
                 if objetivo.get("play_pattern"):
                     ev_pp = (evento.get("play_pattern_name") or "").lower()
-                    
                     if ev_pp != objetivo["play_pattern"].lower():
                         continue
-                    
-                    
+
+                # 2) Aplicar filtros normales del PASE (zona, coords, jugador...), 
+                #    pero SIN obligar a goal/outcomes del tiro
+                pass_obj = dict(objetivo)
+                pass_obj["event"] = "Pass"  # este paso es un pase
+
+                for k in ("goal", "outcome", "outcomes", "success"):
+                    pass_obj.pop(k, None)
+
+                # quitar claves específicas del tiro, que no interesan ahora
+                for k in ("shot_start_x", "shot_start_y", "shot_tolerance", "shot_zone"):
+                    pass_obj.pop(k, None)
+
+                if not comprobar_evento(evento, pass_obj, tolerancia=tolerancia):
+                    # el pase no cumple coords/zona/jugador/etc. → no seguimos
+                    continue
+
+                # Si el pase pasa los filtros, lo añadimos al patrón
                 actual.append(evento)
                 equipo_actual = evento["team_id"]
                 posesion_actual = evento.get("possession_team_id")
                             
-                        # Buscar el Shot asociado en la misma jugada
+                # 3) Buscar el Shot asociado en la misma jugada (lo que ya tenías)
                 cursor2 = conn.cursor()
                 cursor2.execute("""
                     SELECT e.event_id, e.match_id, e.type_name, e.ts_abs, e.team_id,
@@ -530,10 +560,10 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                 shot = cursor2.fetchone()
 
                 if not shot:
-                    actual=[]
+                    actual = []
                     continue
-                else:
-                    shdict = dict(shot)
+
+                shdict = dict(shot)
                         
                 if "goal" in objetivo and bool(objetivo["goal"]) != bool(shdict.get("shot_goal")):
                     actual = []
@@ -561,9 +591,7 @@ def motor_busqueda_avanzado(db_path='futbol.db', secuencia=None,  match_id=None,
                 if indice_obj == len(secuencia):
                     resultados.append(actual.copy())
                     actual, indice_obj, ultimo_tiempo, equipo_actual, posesion_actual = [], 0, None , None, None
-                                
-                            
-                            
+                                        
             continue
 
         if comprobar_evento(evento, objetivo, tolerancia=tolerancia):

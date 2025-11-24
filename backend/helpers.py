@@ -14,6 +14,7 @@ def _norm(s: str) -> str:
     )
     # colapsa espacios múltiples
     s = re.sub(r"\s+", " ", s)
+    s = s.replace("*", "")
     return s
 
 def _norm_equals(a: str, b: str) -> bool:
@@ -93,7 +94,7 @@ def is_recovery(evento) -> bool:
     if is_duel_won(evento) and possession_change(evento):
         return True
     # Puedes añadir "Ball Recovery" si existe en tus datos como evento específico:
-    if _norm(evento.get("type_name")=="ball receipt") and is_success(evento):
+    if _norm(evento.get("type_name")) == "ball receipt" and is_success(evento):
         return True
     return False
 

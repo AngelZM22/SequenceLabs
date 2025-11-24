@@ -638,17 +638,6 @@ return (
           );
         })}
       </svg>
-
-      {/* Leyenda */}
-      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
-        <span className="text-gray-600">Leyenda:</span>
-        {Object.entries(EVENT_COLOR).map(([k, v]) => (
-          <span key={k} className="inline-flex items-center gap-1">
-            <span style={{ background: v }} className="inline-block w-3 h-3 rounded-full border" />
-            {k}
-          </span>
-        ))}
-      </div>
     </div>
   );
 }

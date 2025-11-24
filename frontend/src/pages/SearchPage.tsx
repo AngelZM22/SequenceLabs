@@ -10,7 +10,7 @@ import BarraFiltros from "../components/BarraFiltros";
 // Como any da problemas
 type RankItem = { player_id: number; player_name: string; count?: number; score?: number; drilldown?: string };
 type Ranking = Record<string, RankItem[]>;
-type EventDTO = { type_name?: string; [k: string]: unknown };
+//type EventDTO = { type_name?: string; [k: string]: unknown };
 
 export default function SearchPage(){
 
@@ -86,7 +86,7 @@ export default function SearchPage(){
     // Convierto el ranking a un tipo seguro para el .map de TS
     const ranking: Ranking = (res?.ranking ?? {}) as Ranking;
     // Ejemplos como "array de arrays" con al menos type_name
-    const examples: EventDTO[][] = (res?.examples ?? []) as unknown as EventDTO[][];
+    //const examples: EventDTO[][] = (res?.examples ?? []) as unknown as EventDTO[][];
 
     const repeats = res?.repeats ?? [];
 
@@ -221,17 +221,6 @@ export default function SearchPage(){
                 ))}
                 </ul>
             </section>
-            )}
-            {/* Ejemplos */}
-            {examples.length > 0 && (
-                <section className="bg-white p-4 rounded-xl shadow">
-                <h2 className="font-medium mb-2">Ejemplos</h2>
-                <ol className="list-decimal pl-6 space-y-2 text-sm">
-                    {examples.slice(0, 25).map((jugada, idx) => (
-                    <li key={idx}>{jugada.map((e) => e.type_name ?? "—").join(" → ")}</li>
-                    ))}
-                </ol>
-                </section>
             )}
 
             <InsightsDrawer
