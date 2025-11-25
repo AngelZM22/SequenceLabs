@@ -29,7 +29,8 @@ muestran combinaciones válidas.
 - No se ven opciones vacías o combinaciones imposibles.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Evidencias: captura en `tests/img/pf10-filtros.png`
 
 ---
 
@@ -57,7 +58,9 @@ al equipo/temporada seleccionados.
 - La lista de jugadores siempre corresponde al equipo y temporada actuales.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Evidencias: captura en `tests/img/pf11-filtroscascada.png`
+
 
 ---
 
@@ -87,7 +90,8 @@ y construye un patrón válido para el backend.
 - El patrón queda listo para ser enviado al backend.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Evidencias: captura en `tests/img/pf12-patron-simple.png`
 
 ---
 
@@ -113,7 +117,9 @@ interno como en la representación gráfica.
   se actualizan correctamente.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Evidencias: captura en `tests/img/pf13-edicion-pasos.png`
+
 
 ---
 
@@ -140,7 +146,9 @@ Comprobar el flujo completo: patrón → envío al backend → presentación de 
 - Es posible lanzar varias búsquedas consecutivas sin recargar la página.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Evidencias: captura en `tests/img/pf14-resultados.png`
+
 
 ---
 
@@ -168,4 +176,6 @@ consistente con la búsqueda original.
 - El usuario puede volver a la vista de resultados principal sin reejecutar la búsqueda.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Evidencias: captura en `tests/img/pf15-player-insights.png`
+
