@@ -30,7 +30,9 @@ y que el número de jugadas coincide con el número de tiros registrados.
 - El número de jugadas coincide con `COUNT(*) FROM shots`.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Verificación: UI + consulta SQL de `events`/`shots`
+- Evidencias: captura en `tests/img/pf-01.pdf`, `tests/img/pf-01dbeaver.png`
 
 ---
 
@@ -60,7 +62,8 @@ al mismo equipo y que los partidos están dentro de la competición y temporada 
 - Todos los partidos devueltos pertenecen a la competición y temporada filtradas.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Evidencias: captura en `tests/img/pf-02.pdf`, donde se respetan los filtros (solo se muestra Bundesliga)
 
 ---
 
@@ -86,7 +89,8 @@ Comprobar que el motor respeta las zonas del campo definidas en el patrón.
 - No aparecen jugadas que incumplan las condiciones espaciales.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Evidencias: captura en `tests/img/pf-03.pdf`, se chequea por video a través de esta URL: https://www.youtube.com/watch?v=PzdJ-IOlKsE
 
 ---
 
@@ -111,7 +115,8 @@ Verificar que el filtrado por jugador funciona y respeta el rol definido.
 - No se incluyen acciones de otros jugadores en esa posición.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Evidencias: captura en `tests/img/pf-04.pdf`, donde solo se incluyen acciones de un jugador para ese rol (el filtrado)
 
 ---
 
@@ -125,8 +130,7 @@ Comprobar que la API gestiona correctamente patrones que no devuelven jugadas.
 1. Definir un patrón intencionadamente raro (por ejemplo, combinación de eventos poco
    frecuente en una zona muy concreta del campo, con filtros de jugador/equipo).
 2. Ejecutar la búsqueda.
-3. Observar que la API responde sin errores y que el frontend muestra un mensaje
-   controlado de “sin resultados”.
+3. Observar que la API responde sin errores.
 
 **Resultado esperado**
 
@@ -135,7 +139,9 @@ Comprobar que la API gestiona correctamente patrones que no devuelven jugadas.
 - No se producen errores ni trazas inesperadas en el backend.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Evidencias: captura en `tests/img/pf-05.pdf`, no devuelve resultados y no se corrompe
+
 
 ---
 
@@ -159,7 +165,9 @@ Validar que el resumen global (estadísticas agregadas) coincide con los datos d
   una muestra revisada manualmente.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Evidencias: captura en `tests/img/pf-06.pdf`, se filtra por un equipo, partido y un solo evento y devuelve resultados consistentes.
+
 
 ---
 
@@ -183,7 +191,9 @@ en el patrón.
 - La comprobación manual sobre una muestra coincide con el ranking.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Evidencias: captura en `tests/img/pf-07.pdf`, se filtra por goleadores del barcelona en 2019/20 y cuadra con resultados oficiales, hay que tener en cuenta que no están todos los partidos del barcelona de esa liga.
+
 
 ---
 
@@ -208,7 +218,8 @@ coherentes con la búsqueda original.
   dentro de esa búsqueda concreta.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Evidencias: captura en `tests/img/pf-08.png`, cuadra con resultados oficiales.
 
 ---
 
@@ -233,4 +244,6 @@ Comprobar que el módulo de repeticiones agrupa adecuadamente patrones equivalen
 - Cada grupo representa jugadas equivalentes en distintos contextos.
 
 **Resultado**  
-- [ ] OK  (fecha: ____ / notas: ____)
+- [X] OK  (fecha: 25/11/2025)
+- Evidencias: captura en `tests/img/pf-09.pdf`, comprobamos el caso de Budimir con el Osasuna por vídeo
+  a través de este link: https://www.youtube.com/watch?v=cKOSvTDluOk, y todo cuadra.
